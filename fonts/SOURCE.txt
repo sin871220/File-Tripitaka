@@ -1,0 +1,7 @@
+© 2014-2021 Adobe (http://www.adobe.com/).
+
+Noto Sans CJK KR Regular, unmodified.
+Source: https://github.com/notofonts/noto-cjk
+Font: https://raw.githubusercontent.com/notofonts/noto-cjk/main/Sans/OTF/Korean/NotoSansCJKkr-Regular.otf
+License: OFL.txt (SIL Open Font License 1.1)
+SHA256: 6bcb2a0703aa137e874fc2dffa85f6c21ba9a67fa329e81b8c801663af7e992a
