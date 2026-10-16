@@ -27,7 +27,7 @@
 
 ## 다운로드
 
-**[v1.2.0-beta.1 다운로드 페이지](https://github.com/sin871220/File-Tripitaka/releases/tag/v1.2.0-beta.1)**에서 내 컴퓨터에 맞는 ZIP을 받으세요. Python을 따로 설치할 필요가 없습니다.
+[v1.2.0-beta.1 다운로드 페이지](https://github.com/sin871220/File-Tripitaka/releases/tag/v1.2.0-beta.1)에서 내 컴퓨터에 맞는 ZIP을 받으세요. Python을 따로 설치할 필요가 없습니다.
 
 | 내 컴퓨터 | 받을 파일 | 실행 방법 |
 |---|---|---|
