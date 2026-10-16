@@ -184,6 +184,9 @@ def copy_notices(destination):
                     shutil.copy2(source, target)
     font_notice = ROOT / 'fonts' / 'OFL.txt'
     shutil.copy2(font_notice, destination / 'Noto-Sans-CJK-OFL.txt')
+    # Some Python distributions omit Tcl/Tk license.terms beside their scripts.
+    # Keep the notices for the Tcl/Tk versions shipped in this beta regardless.
+    shutil.copytree(ROOT / 'third_party' / 'tcltk', destination / 'Tcl-Tk', dirs_exist_ok=True)
     python_candidates = [Path(sys.base_prefix) / 'LICENSE.txt',
                          Path(sysconfig.get_path('stdlib')) / 'LICENSE.txt',
                          Path(sys.base_prefix) / 'Resources' / 'English.lproj' / 'License.rtf']

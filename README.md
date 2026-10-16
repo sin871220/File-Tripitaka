@@ -29,6 +29,8 @@
 
 [v1.2.0-beta.1 다운로드 페이지](https://github.com/sin871220/File-Tripitaka/releases/tag/v1.2.0-beta.1)에서 내 컴퓨터에 맞는 ZIP을 받으세요. Python을 따로 설치할 필요가 없습니다.
 
+이번 베타의 [Tcl/Tk 추가 고지문](https://github.com/sin871220/File-Tripitaka/releases/download/v1.2.0-beta.1/THIRD-PARTY-NOTICES.txt)도 함께 받아 앱 배포물과 보관해 주세요. 기존 앱 ZIP은 변경하지 않았습니다.
+
 | 내 컴퓨터 | 받을 파일 | 실행 방법 |
 |---|---|---|
 | Windows 10/11 · 64비트 | [Windows-x64.zip](https://github.com/sin871220/File-Tripitaka/releases/download/v1.2.0-beta.1/File-Tripitaka-v1.2.0-beta.1-Windows-x64.zip) | 압축을 풀고 `FileManDaejanggyeong.exe` 실행 |

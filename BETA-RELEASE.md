@@ -38,3 +38,5 @@ The Mac beta is ad-hoc signed for execution integrity, not Developer ID signed o
 - macOS: `~/Library/Application Support/File Tripitaka` (이전 Mac 소스 실행 설정이 있으면 한 번 가져옵니다.)
 - 기존 즐겨찾기와 설정은 유지합니다. 원본 압축파일을 수정하지 않습니다.
 - 오류 신고 시 OS 버전, CPU 종류, 파일 형식과 재현 단계를 알려주세요. 실제 이미지·토큰·민감한 파일 경로는 공개 Issues에 올리지 마세요.
+
+이번 베타의 [Tcl/Tk 추가 고지문 / additional notices](https://github.com/sin871220/File-Tripitaka/releases/download/v1.2.0-beta.1/THIRD-PARTY-NOTICES.txt)도 함께 받아 앱 배포물과 보관해 주세요. 기존 앱 ZIP은 변경하지 않았습니다.
