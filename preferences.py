@@ -3,14 +3,15 @@ from localization import translate as tr, set_language, localize_widgets, LANGUA
 import os
 from datetime import datetime
 from pathlib import Path
-import subprocess
+import sys
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, font
 from ui_fonts import configure_fonts, select_family
 from brand import APP_NAME, APP_VERSION
+from viewer import (ACTIONS, KEY_ACTIONS, CUSTOM_VIEWER_ACTION, DEFAULT_APP_ACTION,
+                    HONEYVIEW_ACTION, available_actions, default_action,
+                    normalize_action, is_viewer, launch_viewer, choose_viewer)
 
-ACTIONS = ['파일 위치 열기', '꿀뷰 열기', '다른 뷰어 프로그램 열기']
-KEY_ACTIONS = ACTIONS + ['즐겨찾기 추가/해제', '없음']
 PALETTES = {
     '라이트': dict(bg='#F4F6FA', panel='#FFFFFF', fg='#202938', muted='#627087',
                   border='#D9E3EF', accent='#087BFA', hover='#E7F1FF', field='#F5F8FC'),
@@ -24,6 +25,8 @@ PALETTES = {
 
 
 def detect_honeyview():
+    if os.name != 'nt':
+        return ''
     candidates = []
     if os.name == 'nt':
         import winreg
@@ -127,9 +130,10 @@ class Preferences:
             self.after_idle(self.apply_titlebar_theme)
 
     def double_click(self, path):
-        self.execute_action(path, self.settings.get('double_click', '꿀뷰 열기'))
+        self.execute_action(path, self.settings.get('double_click', default_action()))
 
     def execute_action(self, path, action):
+        action = normalize_action(action, keyboard=True)
         if action == '없음':
             return
         if action == '즐겨찾기 추가/해제':
@@ -140,14 +144,14 @@ class Preferences:
             return
         if action == '파일 위치 열기':
             self.reveal(path)
-        elif action == '다른 뷰어 프로그램 열기':
+        elif action == CUSTOM_VIEWER_ACTION:
             viewer = self.settings.get('custom_viewer', '')
-            if not viewer or not Path(viewer).is_file():
+            if not is_viewer(viewer):
                 messagebox.showinfo(tr('뷰어 설정'), tr('설정에서 다른 뷰어 실행 파일을 지정해 주세요.'))
                 self.open_settings()
                 return
             try:
-                subprocess.Popen([viewer, str(path.resolve())])
+                launch_viewer(viewer, path)
             except OSError as exc:
                 messagebox.showerror(tr('뷰어 실행 실패'), tr(str(exc)))
         else:
@@ -157,16 +161,16 @@ class Preferences:
         if language is not None and language not in LANGUAGES:
             raise ValueError('지원하지 않는 언어입니다.')
         previous_language = self.settings.get('language', 'ko')
-        if theme not in PALETTES or action not in ACTIONS:
+        if theme not in PALETTES or action not in available_actions():
             raise ValueError('테마와 더블클릭 동작을 선택해 주세요.')
         keys = key_actions or dict(enter=self.settings.get('enter_action', action), space=self.settings.get('space_action', action))
-        if any(keys.get(key) not in KEY_ACTIONS for key in ('enter', 'space')):
+        if any(keys.get(key) not in available_actions(keyboard=True) for key in ('enter', 'space')):
             raise ValueError('Enter와 Space 동작을 선택해 주세요.')
         selected_actions = {action, keys['enter'], keys['space']}
-        for selected, path in ((ACTIONS[1], honey), (ACTIONS[2], custom)):
-            if selected in selected_actions and path and not Path(path).is_file():
+        for selected, path in ((HONEYVIEW_ACTION, honey), (CUSTOM_VIEWER_ACTION, custom)):
+            if selected in selected_actions and path and not is_viewer(path):
                 raise ValueError('선택한 프로그램 파일을 찾을 수 없습니다.')
-        if ACTIONS[2] in selected_actions and not custom:
+        if CUSTOM_VIEWER_ACTION in selected_actions and not custom:
             raise ValueError('다른 뷰어 프로그램의 실행 파일을 선택해 주세요.')
         font_view = None
         previous_size = getattr(self, 'font_size', 10)
@@ -223,12 +227,12 @@ class Preferences:
         language = tk.StringVar(dialog, value=LANGUAGES.get(self.settings.get('language', 'ko'), '한국어'))
         self.language_choice = language
         theme = tk.StringVar(dialog, value=self.settings.get('theme', '라이트'))
-        action = tk.StringVar(dialog, value=self.settings.get('double_click', '꿀뷰 열기'))
+        action = tk.StringVar(dialog, value=normalize_action(self.settings.get('double_click', default_action())))
         honey = tk.StringVar(dialog, value=self.settings.get('viewer') or detect_honeyview())
         custom = tk.StringVar(dialog, value=self.settings.get('custom_viewer', ''))
         recursive = tk.BooleanVar(dialog, value=self.recursive.get())
-        enter_action = tk.StringVar(dialog, value=self.settings.get('enter_action', action.get()))
-        space_action = tk.StringVar(dialog, value=self.settings.get('space_action', action.get()))
+        enter_action = tk.StringVar(dialog, value=normalize_action(self.settings.get('enter_action', action.get()), keyboard=True))
+        space_action = tk.StringVar(dialog, value=normalize_action(self.settings.get('space_action', action.get()), keyboard=True))
         pages = ttk.Notebook(dialog)
         pages.pack(fill='both', expand=True, padx=14, pady=(14, 0))
         def make_page():
@@ -298,7 +302,7 @@ class Preferences:
         ttk.Combobox(content, state='readonly', textvariable=theme, values=list(PALETTES)).pack(fill='x', pady=(5, 16))
         ttk.Label(opening, text=tr('카드 실행 동작'), style='Heading.TLabel').pack(anchor='w', pady=(0, 14))
         choices = []
-        for label, variable, values in [('더블클릭', action, ACTIONS), ('Enter', enter_action, KEY_ACTIONS), ('Space', space_action, KEY_ACTIONS)]:
+        for label, variable, values in [('더블클릭', action, available_actions()), ('Enter', enter_action, available_actions(keyboard=True)), ('Space', space_action, available_actions(keyboard=True))]:
             row = ttk.Frame(opening)
             row.pack(fill='x', pady=5)
             ttk.Label(row, text=label, width=12).pack(side='left')
@@ -308,28 +312,34 @@ class Preferences:
         paths = ttk.Frame(opening)
         paths.pack(fill='x', pady=(16, 0))
         path_boxes = {}
-        for mode, title, variable in [(ACTIONS[1], '꿀뷰 실행 파일 경로', honey), (ACTIONS[2], '다른 뷰어 실행 파일 경로', custom)]:
+        viewer_fields = [(CUSTOM_VIEWER_ACTION, '다른 뷰어 실행 파일 경로', custom)]
+        if sys.platform != 'darwin':
+            viewer_fields.insert(0, (HONEYVIEW_ACTION, '꿀뷰 실행 파일 경로', honey))
+        for mode, title, variable in viewer_fields:
             panel = ttk.Frame(paths)
             ttk.Label(panel, text=title).pack(anchor='w')
             entry = ttk.Entry(panel, textvariable=variable)
             entry.pack(fill='x', pady=5)
             def browse(var=variable):
-                selected = filedialog.askopenfilename(parent=dialog, title=tr('뷰어 실행 파일 선택'), filetypes=[(tr('실행 파일'), '*.exe'), (tr('모든 파일'), '*')])
+                selected = choose_viewer(parent=dialog)
                 if selected:
                     var.set(selected)
             ttk.Button(panel, text=tr('찾아보기'), command=browse).pack(anchor='w')
+            if sys.platform == 'darwin':
+                ttk.Label(panel, text=tr('macOS에서는 .app 또는 실행 파일을 선택하세요.'), style='Muted.TLabel').pack(anchor='w', pady=5)
             path_boxes[mode] = panel
         def find():
             honey.set(detect_honeyview())
-        ttk.Button(path_boxes[ACTIONS[1]], text=tr('꿀뷰 자동 찾기'), command=find).pack(anchor='w', pady=5)
-        paths.columnconfigure(0, weight=1)
-        paths.columnconfigure(1, weight=1)
+        if HONEYVIEW_ACTION in path_boxes:
+            ttk.Button(path_boxes[HONEYVIEW_ACTION], text=tr('꿀뷰 자동 찾기'), command=find).pack(anchor='w', pady=5)
+        for index in range(len(path_boxes)):
+            paths.columnconfigure(index, weight=1)
         def change(event=None):
             selected = {action.get(), enter_action.get(), space_action.get()}
-            for index, mode in enumerate((ACTIONS[1], ACTIONS[2])):
+            for index, mode in enumerate(path_boxes):
                 path_boxes[mode].grid_forget()
                 if mode in selected:
-                    path_boxes[mode].grid(row=0, column=index, sticky='new', padx=(0, 12) if index == 0 else 0)
+                    path_boxes[mode].grid(row=0, column=index, sticky='new', padx=(0, 12) if index < len(path_boxes) - 1 else 0)
             dialog.after_idle(fit_dialog)
         options = ttk.Frame(content)
         options.pack(fill='x', pady=(16, 0))

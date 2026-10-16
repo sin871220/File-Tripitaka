@@ -1,9 +1,12 @@
-from localization import translate as tr, set_language, localize_widgets, LANGUAGES
 import sys
 if __name__ == '__main__' and len(sys.argv) > 1 and sys.argv[1] == '--thumbnail-worker':
     from thumbnail_worker import main
     raise SystemExit(main())
+if __name__ == '__main__' and '--self-test' in sys.argv:
+    from runtime_check import main
+    raise SystemExit(main())
 
+from localization import translate as tr, set_language, localize_widgets, LANGUAGES
 import json
 import logging
 import faulthandler
@@ -22,11 +25,19 @@ from brand import APP_NAME, APP_TITLE, APP_VERSION, asset_path
 from tree_icons import navigation_icons
 from ui_fonts import register_font, configure_fonts
 from preferences import Preferences, detect_honeyview, card_text
+from viewer import default_action, normalize_action, launch_default, choose_viewer as select_viewer
 from archive_core import ARCHIVES, cover, natural, visible_indices, sort_archives
 
-DATA = Path(os.environ.get('LOCALAPPDATA', Path.home() / '.local/share')) / 'ArchiveShelf'
+DATA = (Path(os.environ['LOCALAPPDATA']) / 'ArchiveShelf' if os.environ.get('LOCALAPPDATA') else
+        Path.home() / 'Library/Application Support/File Tripitaka' if sys.platform == 'darwin' else
+        Path.home() / '.local/share/ArchiveShelf')
 DATA.mkdir(parents=True, exist_ok=True)
 CONFIG = DATA / 'settings.json'
+if sys.platform == 'darwin' and not os.environ.get('LOCALAPPDATA') and not CONFIG.exists():
+    legacy = Path.home() / '.local/share/ArchiveShelf/settings.json'
+    if legacy.is_file():
+        import shutil
+        shutil.copy2(legacy, CONFIG)
 logging.basicConfig(filename=DATA / 'error.log', level=logging.INFO,
                     format='%(asctime)s %(levelname)s %(message)s', encoding='utf-8')
 FAULT_LOG = open(DATA / 'crash.log', 'a', encoding='utf-8')
@@ -56,10 +67,11 @@ class App(Preferences, tk.Tk):
         set_language(self.settings.get('language', 'ko'))
         self.font_size = max(8, min(24, int(self.settings.get('font_size', 10))))
         self.ui_font = configure_fonts(self, self.settings.get('font_family', ''), self.font_size)
-        if not self.settings.get('viewer'):
+        if os.name == 'nt' and not self.settings.get('viewer'):
             self.settings['viewer'] = detect_honeyview()
-        self.settings.setdefault('enter_action', self.settings.get('double_click', '꿀뷰 열기'))
-        self.settings.setdefault('space_action', self.settings.get('double_click', '꿀뷰 열기'))
+        self.settings['double_click'] = normalize_action(self.settings.get('double_click', default_action()))
+        for key in ('enter_action', 'space_action'):
+            self.settings[key] = normalize_action(self.settings.get(key, self.settings['double_click']), keyboard=True)
         self.history = []
         self.current_folder = self.settings.get('folder', '')
         self.views = self.settings.get('views', {})
@@ -313,7 +325,7 @@ class App(Preferences, tk.Tk):
         if self.selected_path in self.filtered:
             path = self.selected_path
             index = self.filtered.index(path)
-            action = self.settings.get(key + '_action', self.settings.get('double_click', '꿀뷰 열기'))
+            action = self.settings.get(key + '_action', self.settings.get('double_click', default_action()))
             advance = self.active_tab == 'favorites' and action == '즐겨찾기 추가/해제'
             self.execute_action(path, action)
             if advance and path not in self.filtered:
@@ -678,6 +690,9 @@ class App(Preferences, tk.Tk):
         star.bind('<Button-1>', lambda e: self.select_card(path))
         star.bind('<Double-Button-1>', lambda e: self.double_click(path))
         star.bind('<Button-3>', lambda e: self.context(e, path))
+        if sys.platform == 'darwin':
+            star.bind('<Button-2>', lambda e: self.context(e, path))
+            star.bind('<Control-Button-1>', lambda e: self.context(e, path))
         star.bind('<Enter>', lambda e: self.status.set(tr(str(path))))
         frame.favorite_badge = star
 
@@ -718,10 +733,11 @@ class App(Preferences, tk.Tk):
             self.navigate(folder)
 
     def choose_viewer(self):
-        path = filedialog.askopenfilename(title=tr('꿀뷰 Honeyview.exe 선택'), filetypes=[(tr('실행 파일'), '*.exe'), (tr('모든 파일'), '*')])
+        path = select_viewer(parent=self)
         if path:
-            self.settings['viewer'] = path
+            self.settings['viewer' if os.name == 'nt' else 'custom_viewer'] = path
             self.save()
+
 
     def scan(self):
         root = Path(self.folder.get()).expanduser()
@@ -839,8 +855,13 @@ class App(Preferences, tk.Tk):
             return
         if event.widget == self.tree or event.widget == self.favorite_list:
             return
-        steps = int(-event.delta / 120) or (-1 if event.delta > 0 else 1)
-        self.scroll_view('scroll', steps * 3, 'units')
+        if not event.delta:
+            return
+        if sys.platform == 'darwin':
+            self.scroll_view('scroll', max(-12, min(12, -int(event.delta))), 'units')
+        else:
+            steps = int(-event.delta / 120) or (-1 if event.delta > 0 else 1)
+            self.scroll_view('scroll', steps * 3, 'units')
 
     def schedule_refresh(self):
         if self.refresh_job is None:
@@ -899,6 +920,9 @@ class App(Preferences, tk.Tk):
                 widget.bind('<Button-1>', lambda e, p=path: self.select_card(p))
                 widget.bind('<Double-Button-1>', lambda e, p=path: self.double_click(p))
                 widget.bind('<Button-3>', lambda e, p=path: self.context(e, p))
+                if sys.platform == 'darwin':
+                    widget.bind('<Button-2>', lambda e, p=path: self.context(e, p))
+                    widget.bind('<Control-Button-1>', lambda e, p=path: self.context(e, p))
                 widget.bind('<Enter>', lambda e, p=path: self.status.set(tr(str(p))))
             window = self.canvas.create_window((x, y), window=frame, anchor='nw', width=card_width, height=self.row_height() + 1)
             self.cards[index] = (path, frame, label, window)
@@ -974,6 +998,12 @@ class App(Preferences, tk.Tk):
         self.after(75, self.poll)
 
     def open_archive(self, path):
+        if sys.platform == 'darwin':
+            try:
+                launch_default(path)
+            except OSError as exc:
+                messagebox.showerror(tr('뷰어 실행 실패'), str(exc))
+            return
         viewer = self.settings.get('viewer')
         if not viewer or not Path(viewer).is_file():
             for base in ('ProgramFiles', 'ProgramFiles(x86)'):
@@ -997,7 +1027,7 @@ class App(Preferences, tk.Tk):
         menu = self.context_menu = tk.Menu(self, tearoff=False, bg=self.palette['panel'], fg=self.palette['fg'], activebackground=self.palette['accent'], activeforeground='white')
         menu.add_command(label=tr('★ 즐겨찾기 해제' if str(path) in self.favorites else '☆ 즐겨찾기 추가'), command=lambda: self.toggle_favorite(path))
         menu.add_command(label=tr('파일 정보'), command=lambda: self.file_info(path))
-        menu.add_command(label=tr('꿀뷰로 열기'), command=lambda: self.open_archive(path))
+        menu.add_command(label=tr('기본 앱으로 열기' if sys.platform == 'darwin' else '꿀뷰로 열기'), command=lambda: self.open_archive(path))
         menu.add_command(label=tr('파일 위치 열기'), command=lambda: self.reveal(path))
         menu.add_command(label=tr('경로 복사'), command=lambda: (self.clipboard_clear(), self.clipboard_append(str(path))))
         try:

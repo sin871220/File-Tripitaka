@@ -8,6 +8,7 @@ from pathlib import Path
 import tempfile
 import json
 import app as module
+from viewer import default_action, available_actions
 sys.excepthook = sys.__excepthook__
 from PIL import Image
 module.cover = lambda *args: Image.new('RGB', (320, 340), 'blue')
@@ -120,7 +121,7 @@ with tempfile.TemporaryDirectory() as tmp:
     app.activate_selection('space')
     app.execute_action.assert_called_once_with(app.selected_path, '없음')
     app.execute_action = original_execute
-    app.settings.update(enter_action='꿀뷰 열기', space_action='꿀뷰 열기')
+    app.settings.update(enter_action=default_action(), space_action=default_action())
     app.select_card(app.filtered[-1])
     selected_before_fit = app.selected_path
     columns_before_fit = app.columns()
@@ -318,22 +319,22 @@ with tempfile.TemporaryDirectory() as tmp:
     display_scroll = app.canvas.yview()
     display_generation = app.generation
     hidden = dict(show_filename=False, show_extension=False, show_size=False, show_date=False)
-    app.commit_preferences('라이트', '꿀뷰 열기', '', '', app.recursive.get(), hidden)
+    app.commit_preferences('라이트', default_action(), '', '', app.recursive.get(), hidden)
     assert app.cards == display_before and app.canvas.yview() == display_scroll
     assert app.generation == display_generation
     assert all(not frame.title_label.winfo_manager() and not frame.info_label.winfo_manager() for _, frame, _, _ in app.cards.values())
     mixed = dict(show_filename=True, show_extension=False, show_size=True, show_date=False)
-    app.commit_preferences('라이트', '꿀뷰 열기', '', '', app.recursive.get(), mixed)
+    app.commit_preferences('라이트', default_action(), '', '', app.recursive.get(), mixed)
     assert all(frame.title_label.cget('text') == path.stem and 'MB' in frame.info_label.cget('text') and '·' not in frame.info_label.cget('text') for path, frame, _, _ in app.cards.values())
-    app.commit_preferences('라이트', '꿀뷰 열기', '', '', app.recursive.get(), dict.fromkeys(hidden, True))
+    app.commit_preferences('라이트', default_action(), '', '', app.recursive.get(), dict.fromkeys(hidden, True))
     font_generation = app.generation
     font_cards = {card[0]: card for card in app.cards.values()}
-    app.commit_preferences('라이트', '꿀뷰 열기', '', '', app.recursive.get(), typography=dict(family=app.ui_font, size=18))
+    app.commit_preferences('라이트', default_action(), '', '', app.recursive.get(), typography=dict(family=app.ui_font, size=18))
     assert app.font_size == 18 and app.generation == font_generation
     remaining = {card[0]: card for card in app.cards.values()}
     assert all(remaining[p] == font_cards[p] for p in remaining.keys() & font_cards.keys())
     assert app.canvas.yview()[0] > .9
-    app.commit_preferences('라이트', '꿀뷰 열기', '', '', app.recursive.get(), typography=dict(family='', size=10))
+    app.commit_preferences('라이트', default_action(), '', '', app.recursive.get(), typography=dict(family='', size=10))
     app.commit_preferences('다크', '파일 위치 열기', '', '', app.recursive.get())
     assert app.canvas.cget('bg') == '#171B23'
     before_theme_cards = dict(app.cards)
@@ -364,14 +365,14 @@ with tempfile.TemporaryDirectory() as tmp:
     settings_tabs.select(0)
     app.update_idletasks()
 
-    for choice in ('파일 위치 열기', '꿀뷰 열기', '다른 뷰어 프로그램 열기'):
+    for choice in available_actions():
         action_combo.set(choice)
         action_combo.event_generate('<<ComboboxSelected>>')
         app.update_idletasks()
         buttons = [w for w in descendants(dialog) if w.winfo_class() == 'TButton' and w.winfo_ismapped()]
         assert all(w.winfo_rooty() + w.winfo_height() <= dialog.winfo_rooty() + dialog.winfo_height() for w in buttons)
     app.settings_window.destroy()
-    app.commit_preferences('라이트', '꿀뷰 열기', '', '', app.recursive.get())
+    app.commit_preferences('라이트', default_action(), '', '', app.recursive.get())
     assert app.canvas.cget('bg') == '#F4F6FA'
     assert app.cards == before_theme_cards
     app.close()

@@ -1,11 +1,14 @@
 """Korean stable settings values with independently translated UI labels."""
 import re
+import sys
 import tkinter as tk
 from tkinter import ttk
 
 LANGUAGES = {'ko': '한국어', 'en': 'English'}
 _language = 'ko'
 EN = {
+'기본 앱으로 열기':'Open in default app','응용 프로그램':'Applications',
+'macOS에서는 .app 또는 실행 파일을 선택하세요.':'On macOS, choose an .app bundle or executable.',
 '파일만대장경':'File Tripitaka', '설정':'Settings', '일반':'General', '표시 설정':'Display', '글꼴':'Font', '열기 동작':'Actions',
 '← 뒤로':'← Back','폴더 선택':'Choose folder','새로고침':'Refresh','즐겨찾는 폴더':'Favorite folders','폴더 탐색':'Folders',
 '현재 폴더 추가':'Add current folder','제거':'Remove','전체':'All','★ 즐겨찾기':'★ Favorites','파일명 검색':'Search name','정렬':'Sort',
@@ -78,10 +81,11 @@ def translate(text, language=None):
     if not isinstance(text, str):
         return text
     language = language or _language
-    if language == 'en' and text in EN:
-        return EN[text]
+    catalog = dict(EN, **{'파일 위치 열기': 'Reveal in Finder'}) if sys.platform == 'darwin' else EN
+    if language == 'en' and text in catalog:
+        return catalog[text]
     if language == 'ko':
-        for korean, english in EN.items():
+        for korean, english in catalog.items():
             if text == english:
                 return korean
     for prefix in ('▶  ', '▼  '):

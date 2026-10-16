@@ -1,14 +1,12 @@
 @echo off
 cd /d "%~dp0"
-py -3 -m venv .venv
+py -3.12 -m venv .venv
 if errorlevel 1 goto fail
-.venv\Scripts\python -m pip install -r requirements.txt pyinstaller
+.venv\Scripts\python -m pip install -r requirements.txt -r requirements-build.txt
 if errorlevel 1 goto fail
-.venv\Scripts\python -m unittest discover -s tests -v
+.venv\Scripts\python scripts\build_release.py --platform windows --arch x64
 if errorlevel 1 goto fail
-.venv\Scripts\python -m PyInstaller --noconfirm --clean --onefile --windowed --name FileManDaejanggyeong --icon assets/app.ico --additional-hooks-dir hooks --add-data "fonts;fonts" --add-data "assets;assets" app.py
-if errorlevel 1 goto fail
-echo EXE: %CD%\dist\FileManDaejanggyeong.exe
+echo Release ZIP and SHA-256: %CD%\dist\releases
 pause
 exit /b 0
 :fail

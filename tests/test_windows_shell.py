@@ -1,9 +1,43 @@
 import unittest
-from unittest.mock import Mock
-from windows_shell import _select_item, logical_drive_roots
+from pathlib import Path
+import subprocess
+import tempfile
+from unittest.mock import Mock, MagicMock, patch
+from windows_shell import _select_item, logical_drive_roots, reveal_file
 
 
 class ShellSelection(unittest.TestCase):
+    def test_mac_reveal_uses_native_selection_without_a_shell(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / '사진 ; $(example).zip'
+            path.touch()
+            with patch('windows_shell.sys.platform', 'darwin'), patch('windows_shell.subprocess.run') as run:
+                self.assertTrue(reveal_file(path))
+                run.assert_called_once_with(['/usr/bin/open', '-R', str(path.resolve())],
+                                            check=True, capture_output=True, timeout=15)
+            with patch('windows_shell.sys.platform', 'darwin'), patch('windows_shell.subprocess.run', side_effect=subprocess.TimeoutExpired('open', 15)):
+                with self.assertRaises(OSError):
+                    reveal_file(path)
+
+    def test_mac_volume_roots_include_only_mounted_directories(self):
+        def volume(name, mounted=True, resolved=None):
+            result = MagicMock()
+            result.name = name
+            result.__str__.return_value = '/Volumes/' + name
+            result.is_dir.return_value = True
+            result.is_mount.return_value = mounted
+            result.resolve.return_value = Path(resolved or '/Volumes/' + name)
+            return result
+        external = volume('External Disk')
+        ordinary = volume('not mounted', mounted=False)
+        internal = volume('Macintosh HD', resolved='/')
+        directory = Mock()
+        directory.iterdir.return_value = [ordinary, internal, external]
+        path_type = Path
+        with patch('windows_shell.sys.platform', 'darwin'), patch('windows_shell.Path', side_effect=lambda value: directory if value == '/Volumes' else path_type(value)):
+            self.assertEqual(logical_drive_roots(), ['/', '/Volumes/External Disk'])
+        external.is_mount.assert_called_once()
+
     def test_drive_letters_include_fixed_removable_and_mapped_letters(self):
         kernel = Mock()
         kernel.GetLogicalDrives.return_value = (1 << 2) | (1 << 3) | (1 << 25)

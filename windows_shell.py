@@ -1,8 +1,10 @@
-"""Windows Explorer selection with Unicode paths and explicit HRESULT checks."""
+"""Native file reveal and drive enumeration; legacy module name is retained."""
 import ctypes
 import logging
 import os
 from pathlib import Path
+import subprocess
+import sys
 
 
 def _select_item(path, shell, ole):
@@ -42,8 +44,15 @@ def reveal_file(path):
     path = Path(path).resolve()
     if not path.is_file():
         raise FileNotFoundError(f'파일을 찾을 수 없습니다. 새로고침 후 다시 시도해 주세요.\n{path}')
+    if sys.platform == 'darwin':
+        try:
+            subprocess.run(['/usr/bin/open', '-R', str(path)], check=True,
+                           capture_output=True, timeout=15)
+        except subprocess.SubprocessError as exc:
+            raise OSError(str(exc)) from exc
+        return True
     if os.name != 'nt':
-        raise OSError('파일 위치 열기는 Windows에서 사용할 수 있습니다.')
+        raise OSError('Unsupported operating system')
     try:
         _select_item(path, ctypes.WinDLL('shell32'), ctypes.WinDLL('ole32'))
     except OSError:
@@ -54,8 +63,10 @@ def reveal_file(path):
 
 
 def logical_drive_roots(kernel=None):
-    """List assigned drive letters without touching removable/network disks."""
+    """List Windows drive letters or macOS mounted volumes without scanning files."""
     if kernel is None:
+        if sys.platform == 'darwin':
+            return _mac_volume_roots()
         if os.name != 'nt':
             return []
         kernel = ctypes.WinDLL('kernel32', use_last_error=True)
@@ -66,6 +77,21 @@ def logical_drive_roots(kernel=None):
         logging.warning('Windows drive list unavailable')
         return []
     return [chr(65 + index) + ':\\' for index in range(26) if mask & (1 << index)]
+
+
+def _mac_volume_roots():
+    roots = ['/']
+    try:
+        volumes = sorted(Path('/Volumes').iterdir(), key=lambda path: path.name.casefold())
+    except OSError:
+        return roots
+    for volume in volumes:
+        try:
+            if volume.is_dir() and volume.is_mount() and volume.resolve() != Path('/'):
+                roots.append(str(volume))
+        except OSError:
+            logging.debug('Volume unavailable: %s', volume, exc_info=True)
+    return roots
 
 
 def set_titlebar_theme(widget_id, background, foreground, dark):

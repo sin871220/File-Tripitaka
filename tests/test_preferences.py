@@ -1,11 +1,18 @@
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 from unittest.mock import Mock, patch
 from preferences import Preferences, card_text, PALETTES
 
 
 class PreferencesChecks(unittest.TestCase):
+    def setUp(self):
+        # These existing checks describe the Windows action set on every test host.
+        self.windows = patch('viewer.sys.platform', 'win32')
+        self.windows.start()
+        self.addCleanup(self.windows.stop)
+
     def dummy(self, **settings):
         view = Preferences()
         view.settings = settings
@@ -106,9 +113,32 @@ class PreferencesChecks(unittest.TestCase):
         view.double_click(path)
         view.open_archive.assert_called_once_with(path)
         view.settings.update(double_click='다른 뷰어 프로그램 열기', custom_viewer=sys.executable)
-        with patch('preferences.subprocess.Popen') as launch:
+        with patch('preferences.launch_viewer') as launch:
             view.double_click(path)
-            launch.assert_called_once_with([sys.executable, str(path.resolve())])
+            launch.assert_called_once_with(sys.executable, path)
+
+    def test_macos_bundle_can_be_saved_and_opened_as_custom_viewer(self):
+        with tempfile.TemporaryDirectory() as folder, patch('viewer.sys.platform', 'darwin'):
+            app = Path(folder) / '만화 Reader.app'
+            (app / 'Contents').mkdir(parents=True)
+            (app / 'Contents' / 'Info.plist').write_text('<plist/>')
+            view = self.dummy()
+            view.commit_preferences('다크', '다른 뷰어 프로그램 열기', '', str(app), True)
+            with patch('preferences.launch_viewer') as launch:
+                view.double_click(Path('만화 archive.zip'))
+                launch.assert_called_once_with(str(app), Path('만화 archive.zip'))
+
+    def test_macos_saved_honeyview_action_falls_back_to_reveal(self):
+        with patch('viewer.sys.platform', 'darwin'):
+            view = self.dummy(double_click='꿀뷰 열기')
+            view.double_click(Path('archive.zip'))
+            view.reveal.assert_called_once_with(Path('archive.zip'))
+            view.open_archive.assert_not_called()
+            with self.assertRaises(ValueError):
+                view.commit_preferences('라이트', '꿀뷰 열기', '', '', True)
+            view.commit_preferences('라이트', '기본 앱으로 열기', '', '', True)
+            view.double_click(Path('archive.zip'))
+            view.open_archive.assert_called_once_with(Path('archive.zip'))
 
     def test_apply_saves_theme_and_only_rescans_when_needed(self):
         view = self.dummy()

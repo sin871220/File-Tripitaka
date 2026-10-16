@@ -1,0 +1,90 @@
+name: Build Windows and macOS beta
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*-beta.*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: beta-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2025
+            platform: windows
+            arch: x64
+            python_arch: x64
+            label: Windows-x64
+          - runner: macos-15
+            platform: macos
+            arch: arm64
+            python_arch: arm64
+            label: macOS-arm64
+          - runner: macos-15-intel
+            platform: macos
+            arch: x86_64
+            python_arch: x64
+            label: macOS-x86_64
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          architecture: ${{ matrix.python_arch }}
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-build.txt
+      - name: Install runtime and packager
+        run: python -m pip install -r requirements.txt -r requirements-build.txt
+      - name: Test, freeze, check the packaged app, and make a ZIP
+        env:
+          FILETRIPITAKA_RELEASE_TAG: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+        run: python scripts/build_release.py --platform ${{ matrix.platform }} --arch ${{ matrix.arch }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: File-Tripitaka-${{ matrix.label }}
+          path: |
+            dist/releases/*.zip
+            dist/releases/*.sha256
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  publish:
+    name: Publish tested beta packages
+    if: github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: File-Tripitaka-*
+          path: dist/releases
+          merge-multiple: true
+      - name: Check all three packages and publish a prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FILETRIPITAKA_RELEASE_TAG: ${{ github.ref_name }}
+        run: python scripts/publish_release.py

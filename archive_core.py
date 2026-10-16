@@ -21,6 +21,8 @@ def natural(value):
 
 def sevenzip():
     for p in [shutil.which('7z'), shutil.which('7zz'),
+              '/opt/homebrew/bin/7zz', '/usr/local/bin/7zz',
+              '/opt/homebrew/bin/7z', '/usr/local/bin/7z',
               str(Path(os.environ.get('ProgramFiles', 'C:/Program Files')) / '7-Zip/7z.exe'),
               str(Path(os.environ.get('ProgramFiles(x86)', 'C:/Program Files (x86)')) / '7-Zip/7z.exe')]:
         if p and Path(p).is_file():
