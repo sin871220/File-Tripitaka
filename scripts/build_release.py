@@ -225,6 +225,12 @@ def package_release(artifact, target, arch, version, work, output):
     for name in ('README.md', 'BETA-RELEASE.md', 'LICENSE', 'LICENSE.txt'):
         if (ROOT / name).is_file():
             shutil.copy2(ROOT / name, staging / name)
+    for relative in ('assets/app.png', 'docs/images/library-overview.png'):
+        source = ROOT / relative
+        if source.is_file():
+            destination = staging / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, destination)
     packages = copy_notices(staging / 'THIRD-PARTY')
     instructions = f'''File Tripitaka v{version} / 파일만대장경
 {TARGETS[target, arch]}
