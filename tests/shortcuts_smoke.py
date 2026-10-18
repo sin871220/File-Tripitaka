@@ -107,7 +107,10 @@ class ShortcutSmoke(unittest.TestCase):
             self.key('<Return>')
             execute.assert_called_once_with(files[2], '즐겨찾기 추가/해제')
             execute.reset_mock()
-            self.key('<KP_Enter>')
+            # Windows Tk reports keypad Enter as Return (VK_RETURN); it has no
+            # native KP_Enter keycode to synthesize. Alias coverage also lives
+            # in test_shortcuts, independent of the platform's GUI key map.
+            self.key('<Return>' if sys.platform == 'win32' else '<KP_Enter>')
             execute.assert_called_once_with(files[2], '즐겨찾기 추가/해제')
             execute.reset_mock()
             self.key('<space>')
