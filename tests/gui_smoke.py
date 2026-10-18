@@ -115,13 +115,17 @@ with tempfile.TemporaryDirectory() as tmp:
     original_execute = app.execute_action
     app.execute_action = Mock()
     app.settings.update(enter_action='파일 위치 열기', space_action='없음')
+    app.settings['shortcuts'] = module.migrate_shortcuts(dict(enter_action='파일 위치 열기', space_action='없음'))
+    app.refresh_shortcuts()
     app.activate_selection('enter')
     app.execute_action.assert_called_once_with(app.selected_path, '파일 위치 열기')
     app.execute_action.reset_mock()
     app.activate_selection('space')
-    app.execute_action.assert_called_once_with(app.selected_path, '없음')
+    app.execute_action.assert_not_called()
     app.execute_action = original_execute
     app.settings.update(enter_action=default_action(), space_action=default_action())
+    app.settings['shortcuts'] = module.migrate_shortcuts(dict(enter_action=default_action(), space_action=default_action()))
+    app.refresh_shortcuts()
     app.select_card(app.filtered[-1])
     selected_before_fit = app.selected_path
     columns_before_fit = app.columns()
@@ -288,6 +292,8 @@ with tempfile.TemporaryDirectory() as tmp:
     removed_frame = before[removed][1]
     expected_next = app.filtered[remove_index + 1]
     app.settings['enter_action'] = '즐겨찾기 추가/해제'
+    app.settings['shortcuts'] = module.migrate_shortcuts(dict(enter_action='즐겨찾기 추가/해제', space_action=app.settings['space_action']))
+    app.refresh_shortcuts()
     app.select_card(removed)
     app.activate_selection('enter')
     assert app.selected_path == expected_next
@@ -349,9 +355,9 @@ with tempfile.TemporaryDirectory() as tmp:
     combos = [w for w in descendants(dialog) if w.winfo_class() == 'TCombobox']
     action_combo = next(w for w in combos if '파일 위치 열기' in w.cget('values'))
     opening_choices = [w for w in combos if '파일 위치 열기' in w.cget('values')]
-    assert len(opening_choices) == 3
+    assert len(opening_choices) == 1
     assert '없음' not in opening_choices[0].cget('values')
-    assert all('없음' in w.cget('values') for w in opening_choices[1:])
+    assert hasattr(dialog, 'shortcut_vars')
 
     settings_tabs = next(w for w in descendants(dialog) if w.winfo_class() == 'TNotebook')
     style = module.ttk.Style(app)
@@ -410,6 +416,8 @@ with tempfile.TemporaryDirectory() as tmp:
     second.favorites = {str(files[0]), str(files[1])}
     second.apply_search()
     second.settings.update(enter_action='즐겨찾기 추가/해제', space_action='즐겨찾기 추가/해제')
+    second.settings['shortcuts'] = module.migrate_shortcuts(dict(enter_action='즐겨찾기 추가/해제', space_action='즐겨찾기 추가/해제'))
+    second.refresh_shortcuts()
     second.select_card(files[0])
     second.activate_selection('enter')
     assert second.filtered == [files[1]] and second.selected_path == files[1]

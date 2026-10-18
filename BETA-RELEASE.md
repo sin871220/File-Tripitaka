@@ -1,42 +1,59 @@
-# File Tripitaka 1.2.0-beta.1 / 파일만대장경
+# File Tripitaka 1.2.1 / 파일만대장경
 
-Windows와 macOS용 첫 베타 배포입니다. / First Windows and macOS beta release.
+**2026-10-18 · 소스 업데이트**
 
-## 다운로드 / Downloads
+파일 이름 변경·휴지통 이동과 기능별 단축키를 추가하고, 이름 변경창과 Windows 소스 실행 방식을 다듬었습니다. 아래 변경 사항은 저장소의 **소스 버전 1.2.1**을 기준으로 합니다.
 
-- **Windows-x64.zip**: 압축을 풀고 EXE를 실행합니다. Python 설치는 필요 없습니다.
-- **macOS-arm64.zip**: Apple Silicon(M1 이상)용입니다. 압축을 풀고 File Tripitaka.app을 응용 프로그램 폴더로 옮깁니다.
-- **macOS-x86_64.zip**: Intel Mac용입니다. Apple Silicon용 파일과 구분해 주세요.
-- `SHA256SUMS.txt`로 각 ZIP의 다운로드 무결성을 확인할 수 있습니다.
+현재 공개된 Windows·Mac 실행 파일은 **[1.2.0-beta.1](https://github.com/sin871220/File-Tripitaka/releases/tag/v1.2.0-beta.1)**입니다. **1.2.1 실행 파일은 아직 Releases에 배포하지 않았습니다.** 기존 베타 ZIP에는 이번 변경 사항이 포함되지 않습니다.
 
-Unzip the package and run the EXE on Windows, or copy the app into Applications on macOS. Python is bundled. Choose arm64 for Apple Silicon and x86_64 for Intel Macs.
+## 1.2.1 업데이트 목록
 
-## 이번 베타 / In this beta
+### 파일 이름 변경과 휴지통 이동
 
-- macOS Finder에서 파일 위치 열기, 기본 앱·선택한 .app 뷰어로 열기
-- Mac의 볼륨 탐색, Control-click·보조 클릭과 스크롤 지원
-- Windows의 기존 꿀뷰·다른 뷰어 연동 유지
-- 한국어 / English, 즐겨찾기, 키보드 동작, 1·2·3장 미리보기 및 창 너비 맞춤
-- 운영체제별 빌드에서 테스트 및 패키징된 앱 자체 점검
+- 우클릭 메뉴와 기본 단축키 **F2**로 압축파일 이름을 바꿀 수 있습니다. 확장자는 유지하며, 같은 이름의 파일이 있으면 덮어쓰지 않습니다.
+- 우클릭 메뉴와 기본 단축키 **Delete**로 확인 후 원본 압축파일을 휴지통에 보낼 수 있습니다. Mac에서는 **Command+Backspace**도 지원합니다. 휴지통을 사용할 수 없으면 작업을 중단하며 영구 삭제로 전환하지 않습니다.
+- 앱 안에서 이름을 바꾸면 즐겨찾기도 새 경로를 따릅니다. 휴지통에 보낸 파일은 전체 목록과 즐겨찾기에서 제거하고 다음 항목을 선택합니다. 마지막 항목이면 이전 항목을 선택합니다.
+- 파일 정리 시 스크롤과 변경하지 않은 썸네일을 유지합니다. 목록 끝에서는 남은 목록 높이에 맞춰 스크롤을 조정하며, 늦게 도착한 미리보기 결과 때문에 지운 파일이 다시 나타나지 않도록 했습니다.
 
-## 실행 환경과 제한 / Requirements and limitations
+### 기능별 단축키 설정
 
-- Windows는 64비트 Windows 10/11, Mac은 **macOS 15 이상**을 대상으로 빌드합니다.
-- macOS 패키지는 **Developer ID 서명·Apple 공증을 하지 않은 베타**입니다. 조직 정책이나 Gatekeeper 설정에 따라 실행이 차단될 수 있으며, 보안 기능을 끄도록 요구하지 않습니다.
-- Windows EXE도 배포자 코드 서명이 없는 베타입니다. SmartScreen 또는 Smart App Control에서 경고·차단될 수 있습니다.
-- Mac의 자동 맞춤·미리보기·ZIP 처리는 앱 자체에서 동작합니다. RAR·7Z 계열 미리보기에는 별도 **7-Zip(7zz/7z)** 설치가 필요합니다. Mac에서는 Homebrew 설치 경로도 찾습니다.
-- Mac의 기본 더블클릭은 Finder에서 파일 위치 열기입니다. 설정에서 다른 뷰어 `.app`을 지정하거나 기본 앱 열기를 선택할 수 있습니다. 기본 앱은 macOS의 파일 연결을 따르므로 압축 해제 프로그램일 수도 있습니다.
-- 꿀뷰 및 다른 외부 뷰어는 포함하지 않습니다.
-- 암호·손상·분할·중첩 압축은 미리보기가 제한될 수 있습니다. 대표 이미지 데이터는 64MB까지 처리하며, 큰 이미지 디코더는 시간·메모리 제한을 적용합니다.
-- 자동 점검 결과는 모든 Windows/Mac 기기에서의 실사용 검증을 뜻하지 않습니다. 베타에서 발견한 문제는 저장소 Issues로 알려주세요.
+- **설정 → 단축키**에서 파일 위치 열기, 뷰어로 열기, 다른 뷰어로 열기, 즐겨찾기 추가·해제, 이름 바꾸기, 휴지통 이동, 폴더 패널 접기·펴기, 창에 맞춤 ON/OFF에 각각 **키 두 개까지** 지정할 수 있습니다.
+- 기존 **Enter·Space 동작은 자동으로 이전**하고, 더블클릭 설정은 별도로 유지합니다. 기존에 ‘없음’으로 설정한 키는 미할당 상태로 남습니다.
+- 중복 키는 안내 후 거부하며, 할당 해제와 단축키 기본값 복원을 지원합니다. 변경은 **적용**을 눌러 저장하고, 취소하면 이전 설정을 유지합니다.
+- 폴더 패널·창 맞춤은 기본 키가 미할당입니다. 키를 지정하면 썸네일을 먼저 클릭하지 않아도 폴더 탐색·즐겨찾는 폴더·버튼 등 메인 창에서 바로 전환할 수 있습니다.
+- 파일 작업 단축키는 썸네일 영역에 포커스가 있을 때 실행합니다. 검색·경로·이름 입력과 설정·키 할당 중에는 입력을 방해하거나 파일 작업을 실행하지 않도록 했습니다.
 
-The Mac beta is ad-hoc signed for execution integrity, not Developer ID signed or Apple-notarized. The Windows beta has no publisher code-signing certificate. OS security policies may block these builds. External archive viewers and 7-Zip are not bundled. The default Mac action reveals the file in Finder; opening with the default app follows your file associations and may launch an archive extractor.
+### 대화상자와 이름 변경창 개선
 
-## 설정과 피드백 / Settings and feedback
+- 설정창은 메인 창 중앙에, 키 할당·이름 변경창은 부모 창 중앙에 표시합니다. Windows에서는 부모 창이 있는 모니터의 작업 영역 안에 배치합니다.
+- 원래 파일명을 **읽기 전용으로 표시하면서 드래그 선택·복사**할 수 있습니다.
+- 이름 변경창을 열면 **파일명 길이에 맞춰 창 너비를 자동 조정**합니다. 화면에 들어가는 이름은 한 줄로 표시하고, 화면보다 긴 이름은 줄바꿈합니다.
+- 창 크기를 직접 조절할 수 있으며 원래 이름은 창 너비에 맞춰 다시 줄바꿈합니다. 입력칸과 버튼이 가려지지 않도록 너비에 따른 최소 높이를 적용했습니다.
+- Windows에서 원래 이름 영역 때문에 창이 세로로 과도하게 늘어나 입력칸과 버튼이 보이지 않던 문제를 수정했습니다.
+- 앱을 닫을 때 남은 화면 갱신 예약을 정리해 종료 후 오류가 발생하지 않도록 했습니다.
 
-- Windows: `%LOCALAPPDATA%\ArchiveShelf`
-- macOS: `~/Library/Application Support/File Tripitaka` (이전 Mac 소스 실행 설정이 있으면 한 번 가져옵니다.)
-- 기존 즐겨찾기와 설정은 유지합니다. 원본 압축파일을 수정하지 않습니다.
-- 오류 신고 시 OS 버전, CPU 종류, 파일 형식과 재현 단계를 알려주세요. 실제 이미지·토큰·민감한 파일 경로는 공개 Issues에 올리지 마세요.
+### 옮겨서 실행하는 Windows 소스 테스트 ZIP
 
-이번 베타의 [Tcl/Tk 추가 고지문 / additional notices](https://github.com/sin871220/File-Tripitaka/releases/download/v1.2.0-beta.1/THIRD-PARTY-NOTICES.txt)도 함께 받아 앱 배포물과 보관해 주세요. 기존 앱 ZIP은 변경하지 않았습니다.
+- `python scripts/package_windows_test.py`로 코드·아이콘·글꼴·실행 배치를 한 버전 폴더에 담은 **Windows-Test.zip 하나**를 만듭니다. 새 런타임 모듈도 포함하고 로컬 가상환경과 Git 설정은 제외합니다.
+- ZIP 전체를 새 폴더에 풀고 안의 **`run-windows.bat`**을 실행하면 됩니다. 폴더를 다른 컴퓨터로 옮기거나 이름을 바꿔도 그 안의 소스로 실행하며, 공유폴더의 UNC 경로도 지원합니다.
+- 실행 창에 실제 소스 폴더와 버전을 표시합니다. 준비나 실행에 실패하면 오류를 보여 주고 중단합니다.
+- 이 테스트 묶음에는 **Python이나 EXE가 포함되지 않습니다. Windows용 Python 3.12 이상**이 필요하며 필요한 라이브러리는 배치 실행 시 설치합니다. 기존 버전 폴더에 덮어 풀지 말고 새 폴더에 풀어 사용하세요.
+
+## 현재 공개 베타의 실행 안내
+
+다음은 **1.2.0-beta.1 배포 파일**에 대한 안내입니다. Python은 포함되어 있어 별도 설치가 필요 없습니다.
+
+- **Windows 10/11 64비트:** Windows-x64 ZIP을 풀고 `FileManDaejanggyeong.exe`를 실행합니다.
+- **macOS 15 이상:** Apple Silicon(M1 이상)은 macOS-arm64, Intel은 macOS-x86_64 ZIP을 받습니다. 압축을 풀고 `File Tripitaka.app`을 응용 프로그램 폴더로 옮깁니다.
+- 공개 베타의 Windows EXE는 배포자 코드 서명이 없습니다. Mac 앱은 실행 무결성을 위한 임시 서명만 적용되어 있으며 Developer ID 서명·Apple 공증은 없습니다. 운영체제 정책에 따라 실행 경고나 차단이 나타날 수 있습니다.
+- 베타의 `SHA256SUMS.txt`로 ZIP 무결성을 확인할 수 있습니다. 별도 제공된 [Tcl/Tk 추가 고지문](https://github.com/sin871220/File-Tripitaka/releases/download/v1.2.0-beta.1/THIRD-PARTY-NOTICES.txt)도 함께 보관해 주세요.
+
+## 지원 범위와 설정
+
+- ZIP·CBZ는 기본 지원하며 RAR·7Z 계열 미리보기에는 별도 **7-Zip(7zz/7z)** 설치가 필요합니다. 꿀뷰 등 외부 뷰어도 별도로 설치해야 합니다.
+- 암호·손상·분할·중첩 압축은 미리보기가 제한될 수 있습니다. 미리보기 자체는 원본을 수정하지 않지만, **이름 변경·휴지통 이동을 직접 실행하면 원본 파일에 적용**됩니다.
+- 기존 설정과 즐겨찾기는 Windows의 `%LOCALAPPDATA%\ArchiveShelf`, Mac의 `~/Library/Application Support/File Tripitaka`에서 유지합니다.
+- 휴지통에서 복원한 파일은 **새로고침**으로 다시 불러올 수 있습니다. 휴지통 이동 때 해제된 즐겨찾기는 다시 추가해야 합니다.
+- 오류를 알려주실 때는 OS 버전, CPU 종류, 파일 형식과 재현 단계를 포함해 주세요. 실제 이미지·토큰·민감한 파일 경로는 공개 Issues에 올리지 마세요.
+
+Version 1.2.1 is a source update. The currently published Windows and macOS binaries remain 1.2.0-beta.1; no 1.2.1 binary release is available yet.

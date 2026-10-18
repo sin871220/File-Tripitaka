@@ -133,6 +133,25 @@ def _gui_checks(archive, directory, report):
         application.select_card(archive)
         cards = dict(application.cards)
         scroll = application.canvas.yview()
+        from shortcuts import command_for_key, validate
+        _require(command_for_key(application.settings['shortcuts'], 'Enter') ==
+                 ('reveal' if sys.platform == 'darwin' else 'viewer'), 'Legacy Enter default did not migrate')
+        original_shortcuts = application.settings['shortcuts']
+        double_click = application.settings['double_click']
+        custom_shortcuts = {command: list(keys) for command, keys in original_shortcuts.items()}
+        custom_shortcuts['favorite'] = ['F8']
+        application.settings['shortcuts'] = validate(custom_shortcuts)
+        application.refresh_shortcuts()
+        application.activate_command(command_for_key(application.settings['shortcuts'], 'F8'))
+        _require(str(archive) in application.favorites, 'Assigned favorite shortcut did not run')
+        application.activate_command('favorite')
+        _require(str(archive) not in application.favorites, 'Assigned favorite shortcut did not toggle off')
+        _require(application.settings['double_click'] == double_click, 'Shortcut change altered double-click')
+        _require(application.cards == cards and application.canvas.yview() == scroll,
+                 'Shortcut action changed unrelated cards or scroll')
+        application.settings['shortcuts'] = original_shortcuts
+        application.refresh_shortcuts()
+        report['checks'].append('function_shortcuts_dispatch_and_independent_double_click')
         for language, title, tab in (('en', 'File Tripitaka', 'All'), ('ko', APP_NAME, '전체')):
             application.settings['language'] = language
             application.apply_language()
@@ -161,6 +180,22 @@ def _gui_checks(archive, directory, report):
 
 
 def _run_checks(directory, report):
+    from file_operations import _send2trash, rename_archive, FileOperationError
+    _require(_send2trash is not None, 'Native Trash/Recycle Bin support is missing from this build')
+    source = directory / 'rename-검사.ZIP'
+    source.write_bytes(b'isolated rename fixture')
+    renamed = rename_archive(source, 'renamed-画像')
+    _require(renamed.name == 'renamed-画像.ZIP' and not source.exists()
+             and renamed.read_bytes() == b'isolated rename fixture', 'Archive rename failed')
+    source.write_bytes(b'collision fixture')
+    try:
+        rename_archive(source, 'renamed-画像')
+    except FileOperationError as error:
+        _require(error.code == 'exists', 'Incorrect rename collision error')
+    else:
+        raise RuntimeError('Archive rename replaced an existing file')
+    _require(renamed.read_bytes() == b'isolated rename fixture', 'Rename collision changed the destination')
+    report['checks'].append('native_trash_backend_import_and_no_replace_archive_rename')
     archive, jpeg_data = _archive_checks(directory, report)
     _native_checks(jpeg_data, report)
     _gui_checks(archive, directory, report)

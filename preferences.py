@@ -8,9 +8,13 @@ import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, font
 from ui_fonts import configure_fonts, select_family
 from brand import APP_NAME, APP_VERSION
+from dialog_geometry import center_dialog
 from viewer import (ACTIONS, KEY_ACTIONS, CUSTOM_VIEWER_ACTION, DEFAULT_APP_ACTION,
                     HONEYVIEW_ACTION, available_actions, default_action,
                     normalize_action, is_viewer, launch_viewer, choose_viewer)
+from shortcuts import (defaults as default_shortcuts, migrate as migrate_shortcuts,
+                       validate as validate_shortcuts, legacy_actions,
+                       event_key, command_labels, normalize_key)
 
 PALETTES = {
     '라이트': dict(bg='#F4F6FA', panel='#FFFFFF', fg='#202938', muted='#627087',
@@ -157,45 +161,67 @@ class Preferences:
         else:
             self.open_archive(path)
 
-    def commit_preferences(self, theme, action, honey, custom, recursive, display=None, typography=None, key_actions=None, language=None):
+    def commit_preferences(self, theme, action, honey, custom, recursive, display=None, typography=None, key_actions=None, language=None, shortcuts=None):
         if language is not None and language not in LANGUAGES:
             raise ValueError('지원하지 않는 언어입니다.')
         previous_language = self.settings.get('language', 'ko')
         if theme not in PALETTES or action not in available_actions():
             raise ValueError('테마와 더블클릭 동작을 선택해 주세요.')
-        keys = key_actions or dict(enter=self.settings.get('enter_action', action), space=self.settings.get('space_action', action))
-        if any(keys.get(key) not in available_actions(keyboard=True) for key in ('enter', 'space')):
-            raise ValueError('Enter와 Space 동작을 선택해 주세요.')
-        selected_actions = {action, keys['enter'], keys['space']}
+        # Legacy callers may still supply Enter/Space actions. A new mapping is
+        # authoritative only when explicitly supplied or already saved.
+        if shortcuts is not None:
+            shortcut_map = validate_shortcuts(shortcuts)
+        elif key_actions is not None:
+            if any(key_actions.get(key) not in available_actions(keyboard=True) for key in ('enter', 'space')):
+                raise ValueError('Enter와 Space 동작을 선택해 주세요.')
+            legacy = dict(self.settings, enter_action=key_actions['enter'], space_action=key_actions['space'])
+            legacy.pop('shortcuts', None)
+            shortcut_map = validate_shortcuts(migrate_shortcuts(legacy))
+        else:
+            shortcut_map = validate_shortcuts(migrate_shortcuts(self.settings))
+        keys = legacy_actions(shortcut_map)
+        labels = command_labels()
+        selected_actions = {action} | {labels[command] for command, values in shortcut_map.items() if values}
         for selected, path in ((HONEYVIEW_ACTION, honey), (CUSTOM_VIEWER_ACTION, custom)):
             if selected in selected_actions and path and not is_viewer(path):
                 raise ValueError('선택한 프로그램 파일을 찾을 수 없습니다.')
         if CUSTOM_VIEWER_ACTION in selected_actions and not custom:
             raise ValueError('다른 뷰어 프로그램의 실행 파일을 선택해 주세요.')
+        # Validate every field before changing settings or live typography.
+        display_values = None
+        if display is not None:
+            try:
+                display_values = {key: bool(display[key]) for key in ('show_filename', 'show_extension', 'show_size', 'show_date')}
+            except (KeyError, TypeError):
+                raise ValueError('표시 설정을 확인해 주세요.')
         font_view = None
         previous_size = getattr(self, 'font_size', 10)
         if typography is not None:
             try:
                 size = int(typography['size'])
-            except (ValueError, TypeError):
+            except (KeyError, ValueError, TypeError):
                 raise ValueError('글자 크기는 8~24 사이의 정수로 입력해 주세요.')
             if not 8 <= size <= 24:
                 raise ValueError('글자 크기는 8~24 사이로 선택해 주세요.')
             family = typography.get('family', '')
             if family and family not in font.families(self):
                 raise ValueError('설치된 글꼴 목록에서 선택해 주세요.')
+        if typography is not None:
             self.remember_position()
             font_view = self.views.get(self.current_folder, {}).copy()
             self.settings.update(font_family=family, font_size=size)
             self.font_size = size
             self.ui_font = configure_fonts(self, family, size)
         changed = recursive != self.recursive.get()
-        self.settings.update(theme=theme, double_click=action, enter_action=keys['enter'], space_action=keys['space'], viewer=honey, custom_viewer=custom)
-        if display is not None:
-            self.settings.update({key: bool(display[key]) for key in ('show_filename', 'show_extension', 'show_size', 'show_date')})
+        self.settings.update(theme=theme, double_click=action, shortcuts=shortcut_map,
+                             viewer=honey, custom_viewer=custom, **keys)
+        if display_values is not None:
+            self.settings.update(display_values)
         if language is not None:
             self.settings['language'] = language
         self.recursive.set(recursive)
+        if hasattr(self, 'refresh_shortcuts'):
+            self.refresh_shortcuts()
         self.save()
         if hasattr(self, 'refresh_card_labels'):
             self.refresh_card_labels()
@@ -219,11 +245,11 @@ class Preferences:
             existing.lift()
             return
         dialog = self.settings_window = tk.Toplevel(self)
+        dialog.withdraw()
         dialog.title(tr('설정 · {name}'.format(name=tr(APP_NAME))))
-        dialog.geometry('640x560')
-        dialog.minsize(600, 540)
+        dialog.geometry('720x590')
+        dialog.minsize(680, 560)
         dialog.transient(self)
-        dialog.grab_set()
         language = tk.StringVar(dialog, value=LANGUAGES.get(self.settings.get('language', 'ko'), '한국어'))
         self.language_choice = language
         theme = tk.StringVar(dialog, value=self.settings.get('theme', '라이트'))
@@ -231,8 +257,14 @@ class Preferences:
         honey = tk.StringVar(dialog, value=self.settings.get('viewer') or detect_honeyview())
         custom = tk.StringVar(dialog, value=self.settings.get('custom_viewer', ''))
         recursive = tk.BooleanVar(dialog, value=self.recursive.get())
-        enter_action = tk.StringVar(dialog, value=normalize_action(self.settings.get('enter_action', action.get()), keyboard=True))
-        space_action = tk.StringVar(dialog, value=normalize_action(self.settings.get('space_action', action.get()), keyboard=True))
+        shortcut_map = migrate_shortcuts(self.settings)
+        labels = command_labels()
+        shortcut_vars = {command: [tk.StringVar(dialog, value=(shortcut_map[command][index]
+                         if index < len(shortcut_map[command]) else '')) for index in range(2)]
+                         for command in labels}
+        dialog.shortcut_vars = shortcut_vars
+        dialog.shortcut_buttons = {}
+        dialog.action_var = action
         pages = ttk.Notebook(dialog)
         pages.pack(fill='both', expand=True, padx=14, pady=(14, 0))
         def make_page():
@@ -248,14 +280,25 @@ class Preferences:
         pages.add(font_outer, text=tr('글꼴'))
         opening_outer, opening = make_page()
         pages.add(opening_outer, text=tr('열기 동작'))
+        shortcuts_outer, shortcuts_page = make_page()
+        pages.add(shortcuts_outer, text=tr('단축키'))
+        dialog.settings_tabs = pages
         def fit_dialog():
             if not dialog.winfo_exists():
                 return
             dialog.update_idletasks()
-            width = max(640, dialog.winfo_reqwidth())
-            height = max(560, dialog.winfo_reqheight())
+            width = max(720, dialog.winfo_reqwidth())
+            height = max(590, dialog.winfo_reqheight())
             dialog.minsize(width, height)
-            dialog.geometry(f'{width}x{height}')
+            if not getattr(dialog, '_initial_position_set', False):
+                # Set before centering: update_idletasks can run another pending fit.
+                dialog._initial_position_set = True
+                center_dialog(dialog, self, width, height)
+                dialog.deiconify()
+                dialog.grab_set()
+            else:
+                # Keep a position the user has chosen by dragging the dialog.
+                dialog.geometry(f'{width}x{height}')
         display = {key: tk.BooleanVar(dialog, value=self.settings.get(key, True))
                    for key in ('show_filename', 'show_extension', 'show_size', 'show_date')}
         ttk.Label(display_page, text=tr('썸네일 카드 표시'), style='Heading.TLabel').pack(anchor='w', pady=(0, 16))
@@ -302,13 +345,14 @@ class Preferences:
         ttk.Combobox(content, state='readonly', textvariable=theme, values=list(PALETTES)).pack(fill='x', pady=(5, 16))
         ttk.Label(opening, text=tr('카드 실행 동작'), style='Heading.TLabel').pack(anchor='w', pady=(0, 14))
         choices = []
-        for label, variable, values in [('더블클릭', action, available_actions()), ('Enter', enter_action, available_actions(keyboard=True)), ('Space', space_action, available_actions(keyboard=True))]:
+        for label, variable, values in [('더블클릭', action, available_actions())]:
             row = ttk.Frame(opening)
             row.pack(fill='x', pady=5)
             ttk.Label(row, text=label, width=12).pack(side='left')
             box = ttk.Combobox(row, state='readonly', textvariable=variable, values=values)
             box.pack(side='left', fill='x', expand=True)
             choices.append(box)
+            dialog.action_box = box
         paths = ttk.Frame(opening)
         paths.pack(fill='x', pady=(16, 0))
         path_boxes = {}
@@ -335,12 +379,132 @@ class Preferences:
         for index in range(len(path_boxes)):
             paths.columnconfigure(index, weight=1)
         def change(event=None):
-            selected = {action.get(), enter_action.get(), space_action.get()}
+            selected = {action.get()} | {labels[command] for command, values in shortcut_vars.items()
+                                        if any(variable.get() for variable in values)}
             for index, mode in enumerate(path_boxes):
                 path_boxes[mode].grid_forget()
                 if mode in selected:
                     path_boxes[mode].grid(row=0, column=index, sticky='new', padx=(0, 12) if index < len(path_boxes) - 1 else 0)
             dialog.after_idle(fit_dialog)
+        ttk.Label(shortcuts_page, text=tr('기능별 단축키'), style='Heading.TLabel').pack(anchor='w', pady=(0, 10))
+        ttk.Label(shortcuts_page, text=tr('키 칸을 누른 뒤 원하는 키를 입력하세요. 같은 기능에 키를 두 개까지 지정할 수 있습니다.'),
+                  wraplength=630, style='Muted.TLabel').pack(anchor='w', pady=(0, 12))
+        shortcut_table = ttk.Frame(shortcuts_page)
+        shortcut_table.pack(fill='x')
+        shortcut_table.columnconfigure(0, weight=1)
+        ttk.Style(self).configure('ShortcutKey.TButton', padding=(8, 3))
+        for column, title in enumerate(('기능', '키 1', '키 2')):
+            ttk.Label(shortcut_table, text=tr(title), style='Muted.TLabel').grid(row=0, column=column, sticky='w', padx=(0, 12), pady=(0, 5))
+        def draft_shortcuts():
+            return {command: [variable.get() for variable in values]
+                    for command, values in shortcut_vars.items()}
+        def assign_shortcut(command, index, key):
+            key = normalize_key(key)
+            draft = draft_shortcuts()
+            draft[command][index] = key
+            normalized = validate_shortcuts(draft)
+            # Keep the selected slot stable, including an empty first slot.
+            shortcut_vars[command][index].set(key if key else '')
+            return normalized
+        dialog.settings_assign_shortcut = assign_shortcut
+        def capture_shortcut(command, index):
+            existing_capture = getattr(dialog, 'shortcut_capture', None)
+            if existing_capture is not None and existing_capture.winfo_exists():
+                existing_capture.lift()
+                return
+            capture = dialog.shortcut_capture = tk.Toplevel(dialog)
+            capture.withdraw()
+            capture.title(tr('단축키 할당 · {action}').format(action=tr(labels[command])))
+            capture.transient(dialog)
+            capture.resizable(False, False)
+            capture.configure(bg=self.palette['panel'])
+            frame = ttk.Frame(capture, padding=20)
+            frame.pack(fill='both', expand=True)
+            ttk.Label(frame, text=tr('할당할 키를 누르세요.'), style='Heading.TLabel').pack(anchor='w')
+            ttk.Label(frame, text=tr('Ctrl·Alt·Shift·Command와 다른 키를 함께 누를 수 있습니다.'),
+                      wraplength=440, style='Muted.TLabel').pack(anchor='w', pady=(8, 12))
+            capture.key_var = tk.StringVar(capture, value='')
+            capture.error_var = tk.StringVar(capture, value='')
+            capture.key_entry = ttk.Entry(frame, textvariable=capture.key_var, state='readonly', justify='center', width=34)
+            capture.key_entry.pack(fill='x', pady=(0, 10))
+            ttk.Label(frame, textvariable=capture.error_var, wraplength=440, foreground=self.palette['accent']).pack(fill='x', pady=(0, 12))
+            def close_capture():
+                capture.destroy()
+                if dialog.winfo_exists():
+                    dialog.grab_set()
+                    dialog.shortcut_buttons[command][index].focus_set()
+            def accept_capture():
+                key = capture.key_var.get()
+                if not key:
+                    capture.error_var.set(tr('사용할 단축키를 먼저 입력해 주세요.'))
+                    return
+                try:
+                    assign_shortcut(command, index, key)
+                except ValueError as exc:
+                    capture.error_var.set(tr(str(exc)))
+                    messagebox.showerror(tr('중복 단축키'), tr(str(exc)), parent=capture)
+                    return
+                close_capture()
+            def clear_capture():
+                assign_shortcut(command, index, '')
+                close_capture()
+            def key_pressed(event):
+                key = event_key(event)
+                if key == 'Escape':
+                    close_capture()
+                    return 'break'
+                if key:
+                    try:
+                        validate_shortcuts({command: [key]})
+                    except ValueError as exc:
+                        capture.error_var.set(tr(str(exc)))
+                    else:
+                        capture.key_var.set(key)
+                        capture.error_var.set('')
+                return 'break'
+            actions = ttk.Frame(frame)
+            actions.pack(fill='x')
+            ttk.Button(actions, text=tr('할당 해제'), command=clear_capture).pack(side='left')
+            ttk.Button(actions, text=tr('할당'), command=accept_capture).pack(side='right')
+            ttk.Button(actions, text=tr('취소'), command=close_capture).pack(side='right', padx=8)
+            capture.settings_accept = accept_capture
+            capture.settings_clear = clear_capture
+            capture.settings_cancel = close_capture
+            capture.protocol('WM_DELETE_WINDOW', close_capture)
+            capture.bind('<KeyPress>', key_pressed)
+            style_settings(capture)
+            center_dialog(capture, dialog)
+            capture.deiconify()
+            capture.grab_set()
+            capture.after_idle(capture.key_entry.focus_force)
+        dialog.settings_capture_shortcut = capture_shortcut
+        for row_index, (command, label) in enumerate(labels.items(), start=1):
+            ttk.Label(shortcut_table, text=tr(label)).grid(row=row_index, column=0, sticky='w', padx=(0, 18), pady=2)
+            buttons_for_command = []
+            for index, variable in enumerate(shortcut_vars[command]):
+                button = ttk.Button(shortcut_table, width=16, style='ShortcutKey.TButton',
+                                    command=lambda command=command, index=index: capture_shortcut(command, index))
+                button.grid(row=row_index, column=index + 1, sticky='ew', padx=(0, 8) if index == 0 else 0, pady=2)
+                def show_key(*_, variable=variable, button=button):
+                    button.configure(text=variable.get() or tr('없음'))
+                    change()
+                variable.trace_add('write', show_key)
+                button.configure(text=variable.get() or tr('없음'))
+                buttons_for_command.append(button)
+            dialog.shortcut_buttons[command] = buttons_for_command
+        shortcut_status = tk.StringVar(dialog, value='')
+        dialog.shortcut_status = shortcut_status
+        def reset_shortcuts():
+            defaults = default_shortcuts()
+            for command, values in shortcut_vars.items():
+                for index, variable in enumerate(values):
+                    variable.set(defaults[command][index] if index < len(defaults[command]) else '')
+            shortcut_status.set(tr('기본 단축키를 불러왔습니다. 적용을 누르면 저장됩니다.'))
+        dialog.settings_reset_shortcuts = reset_shortcuts
+        ttk.Button(shortcuts_page, text=tr('기본값 복원'), command=reset_shortcuts).pack(anchor='w', pady=(12, 5))
+        ttk.Label(shortcuts_page, textvariable=shortcut_status, wraplength=630, style='Muted.TLabel').pack(anchor='w')
+        ttk.Label(shortcuts_page, text=tr('파일 작업은 썸네일 영역에서, 폴더 패널·창 맞춤은 메인 창에서 동작합니다. 입력창과 설정창에서는 화면 전환 키가 동작하지 않습니다.'),
+                  wraplength=630, style='Muted.TLabel').pack(anchor='w', pady=(10, 0))
         options = ttk.Frame(content)
         options.pack(fill='x', pady=(16, 0))
         ttk.Checkbutton(options, text=tr('전체 탭에서 하위 폴더까지 모아 보기'), variable=recursive).pack(anchor='w')
@@ -350,12 +514,13 @@ class Preferences:
             try:
                 self.commit_preferences(theme.get(), action.get(), honey.get().strip(), custom.get().strip(), recursive.get(), {key: value.get() for key, value in display.items()},
                                         dict(family='' if family_choice.get() == automatic_font else family_choice.get(), size=size_choice.get()),
-                                        dict(enter=enter_action.get(), space=space_action.get()),
-                                        language=next(code for code, label in LANGUAGES.items() if label == language.get()))
+                                        language=next(code for code, label in LANGUAGES.items() if label == language.get()),
+                                        shortcuts=draft_shortcuts())
             except ValueError as exc:
                 messagebox.showerror(tr('설정 확인'), tr(str(exc)), parent=dialog)
                 return
             dialog.destroy()
+        dialog.settings_apply = apply
         ttk.Button(buttons, text=tr('적용'), command=apply).pack(side='right')
         ttk.Button(buttons, text=tr('취소'), command=dialog.destroy).pack(side='right', padx=8)
         dialog.bind('<Escape>', lambda e: dialog.destroy())
@@ -374,6 +539,7 @@ class Preferences:
             for child in widget.winfo_children():
                 style_settings(child)
         style_settings(dialog)
+        settings_style.configure('Settings.TNotebook.Tab', font=(self.ui_font, min(self.font_size, 12)))
         localize_widgets(dialog)
         change()
         dialog.after_idle(fit_dialog)

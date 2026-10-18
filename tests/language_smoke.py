@@ -50,7 +50,8 @@ with tempfile.TemporaryDirectory() as tmp:
     assert app.settings['language'] == 'en'
     with patch.object(module.tk.Menu, 'tk_popup'):
         app.context(SimpleNamespace(x_root=0, y_root=0), files[0])
-    labels = [app.context_menu.entrycget(i, 'label') for i in range(app.context_menu.index('end') + 1)]
+    labels = [app.context_menu.entrycget(i, 'label') for i in range(app.context_menu.index('end') + 1)
+              if app.context_menu.type(i) != 'separator']
     assert 'File information' in labels and 'Copy path' in labels
     assert app.selected_path == files[0]
     assert app.cards == cards_before
@@ -64,8 +65,11 @@ with tempfile.TemporaryDirectory() as tmp:
     app.open_settings()
     dialog = app.settings_window
     assert dialog.title() == 'Settings · File Tripitaka'
-    key_box = next(w for w in descendants(dialog) if isinstance(w, ttk.Combobox) and 'Toggle favorite' in w.cget('values'))
-    key_box.set('Toggle favorite')
+    for command, slots in dialog.shortcut_vars.items():
+        for index, variable in enumerate(slots):
+            if variable.get() == 'Enter':
+                dialog.settings_assign_shortcut(command, index, '')
+    dialog.settings_assign_shortcut('favorite', 0, 'Enter')
     apply_dialog()
     assert app.settings['enter_action'] == '즐겨찾기 추가/해제'
     app.activate_selection('enter')

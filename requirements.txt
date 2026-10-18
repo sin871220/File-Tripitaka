@@ -1,3 +1,5 @@
 Pillow>=11.0,<13
 pyvips[binary]>=3.1,<4
 psutil>=6,<8
+Send2Trash[nativeLib]>=1.8.3,<2; sys_platform == "win32"
+Send2Trash>=1.8.3,<2; sys_platform != "win32"

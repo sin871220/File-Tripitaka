@@ -1,4 +1,8 @@
 import sys
+if __name__ == '__main__' and '--version' in sys.argv:
+    from brand import APP_TITLE
+    print(APP_TITLE)
+    raise SystemExit(0)
 if __name__ == '__main__' and len(sys.argv) > 1 and sys.argv[1] == '--thumbnail-worker':
     from thumbnail_worker import main
     raise SystemExit(main())
@@ -18,15 +22,19 @@ import queue
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox
+from tkinter import ttk, filedialog, messagebox, font as tkfont
 from PIL import ImageTk, Image
 from windows_shell import reveal_file, logical_drive_roots, set_titlebar_theme
 from brand import APP_NAME, APP_TITLE, APP_VERSION, asset_path
 from tree_icons import navigation_icons
 from ui_fonts import register_font, configure_fonts
 from preferences import Preferences, detect_honeyview, card_text
-from viewer import default_action, normalize_action, launch_default, choose_viewer as select_viewer
+from viewer import (default_action, normalize_action, launch_default, choose_viewer as select_viewer,
+                    REVEAL_ACTION, HONEYVIEW_ACTION, DEFAULT_APP_ACTION, CUSTOM_VIEWER_ACTION)
 from archive_core import ARCHIVES, cover, natural, visible_indices, sort_archives
+from file_operations import FileOperationError, rename_archive, trash_archive
+from dialog_geometry import center_dialog, _workarea
+from shortcuts import migrate as migrate_shortcuts, validate as validate_shortcuts, legacy_actions, command_for_key, event_key
 
 DATA = (Path(os.environ['LOCALAPPDATA']) / 'ArchiveShelf' if os.environ.get('LOCALAPPDATA') else
         Path.home() / 'Library/Application Support/File Tripitaka' if sys.platform == 'darwin' else
@@ -71,7 +79,9 @@ class App(Preferences, tk.Tk):
             self.settings['viewer'] = detect_honeyview()
         self.settings['double_click'] = normalize_action(self.settings.get('double_click', default_action()))
         for key in ('enter_action', 'space_action'):
-            self.settings[key] = normalize_action(self.settings.get(key, self.settings['double_click']), keyboard=True)
+            self.settings.setdefault(key, self.settings['double_click'])
+        self.settings['shortcuts'] = migrate_shortcuts(self.settings)
+        self.refresh_shortcuts()
         self.history = []
         self.current_folder = self.settings.get('folder', '')
         self.views = self.settings.get('views', {})
@@ -88,6 +98,8 @@ class App(Preferences, tk.Tk):
         self.results = queue.Queue()
         self.generation = 0
         self.scan_generation = 0
+        self.file_revision = 0
+        self.file_changes = []
         self.files = []
         self.filtered = []
         self.modified = {}
@@ -216,11 +228,7 @@ class App(Preferences, tk.Tk):
         self.canvas.pack(fill='both', expand=True)
         self.canvas.configure(takefocus=True)
         self.canvas.bind('<Button-1>', lambda e: self.canvas.focus_set())
-        for key in ('Left', 'Right', 'Up', 'Down'):
-            self.canvas.bind('<' + key + '>', self.move_selection)
-        self.canvas.bind('<Return>', lambda e: self.activate_selection('enter'))
-        self.canvas.bind('<KP_Enter>', lambda e: self.activate_selection('enter'))
-        self.canvas.bind('<space>', lambda e: self.activate_selection('space'))
+        self.canvas.bind('<KeyPress>', self.gallery_keypress)
         self.canvas.bind('<Configure>', self.resize)
         self.canvas.bind_all('<MouseWheel>', self.wheel)
         self.canvas.bind_all('<Button-4>', lambda e: self.scroll_view('scroll', -3, 'units'))
@@ -228,6 +236,10 @@ class App(Preferences, tk.Tk):
         self.status = tk.StringVar(value='폴더를 선택해 주세요. ZIP은 바로, RAR·7Z는 7-Zip 설치 후 미리볼 수 있습니다.')
         ttk.Label(self, textvariable=self.status, padding=10).pack(fill='x')
         self.bind('<Map>', lambda event: self.apply_titlebar_theme() if event.widget is self else None, add='+')
+        self.view_shortcut_tag = f'FileTripitakaViewShortcuts_{id(self)}'
+        self.bind_class(self.view_shortcut_tag, '<KeyPress>', self.window_keypress)
+        self.bind('<Map>', self.install_view_shortcuts, add='+')
+        self.install_view_shortcuts()
         self.apply_theme()
         self.apply_language()
         self.protocol('WM_DELETE_WINDOW', self.close)
@@ -321,12 +333,89 @@ class App(Preferences, tk.Tk):
         self.paint_selection()
         return 'break'
 
+    def refresh_shortcuts(self):
+        self.settings['shortcuts'] = validate_shortcuts(self.settings['shortcuts'])
+        self.settings.update(legacy_actions(self.settings['shortcuts']))
+
+    def gallery_keypress(self, event):
+        if self.tk.call('grab', 'current', self._w):
+            return 'break'
+        key = event_key(event)
+        command = command_for_key(self.settings['shortcuts'], key) if key else None
+        if command is not None:
+            return self.activate_command(command)
+        if key in ('Left', 'Right', 'Up', 'Down'):
+            return self.move_selection(event)
+
+    def install_view_shortcuts(self, event=None):
+        # Put view shortcuts before widget/class bindings. In particular, a
+        # configured Space must not also press the button that currently has focus.
+        pending = [getattr(event, 'widget', None)] if event is not None else [self]
+        while pending:
+            widget = pending.pop()
+            if not isinstance(widget, tk.Misc) or widget.winfo_toplevel() is not self:
+                continue
+            tags = widget.bindtags()
+            if self.view_shortcut_tag not in tags:
+                widget.bindtags((self.view_shortcut_tag,) + tags)
+            if event is None:
+                pending.extend(widget.winfo_children())
+
+    def window_keypress(self, event):
+        widget = getattr(event, 'widget', None)
+        if not isinstance(widget, tk.Misc) or widget.winfo_toplevel() is not self:
+            return
+        if widget.winfo_class() in ('Entry', 'TEntry', 'Text', 'Spinbox', 'TSpinbox',
+                                     'Combobox', 'TCombobox'):
+            return
+        # Tcl-created controls, such as a combo popdown, need not have a Python
+        # widget object. Query the grab directly rather than resolving that object.
+        if self.tk.call('grab', 'current', self._w):
+            return 'break'
+        key = event_key(event)
+        command = command_for_key(self.settings['shortcuts'], key) if key else None
+        if command not in ('sidebar', 'fit'):
+            return
+        self.activate_command(command)
+        if command == 'sidebar' and self.sidebar_hidden:
+            path = str(widget)
+            if path == str(self.sidebar) or path.startswith(str(self.sidebar) + '.'):
+                self.canvas.focus_set()
+        return 'break'
+
+    def shortcut_label(self, command):
+        return ', '.join(self.settings['shortcuts'].get(command, []))
+
     def activate_selection(self, key):
+        # Compatibility entry point for callers; the function map is authoritative.
+        command = command_for_key(self.settings['shortcuts'], {'enter': 'Enter', 'space': 'Space'}.get(key, key))
+        return self.activate_command(command)
+
+    def activate_command(self, command):
+        # View commands also work in an empty gallery or before selecting a file.
+        if command == 'sidebar':
+            self.toggle_sidebar()
+            return 'break'
+        if command == 'fit':
+            # invoke() flips the Checkbutton variable before its existing callback.
+            self.fit_button.invoke()
+            return 'break'
         if self.selected_path in self.filtered:
             path = self.selected_path
+            if command == 'rename':
+                return self.rename_file()
+            if command == 'trash':
+                return self.delete_file()
+            action = {
+                'reveal': REVEAL_ACTION,
+                'viewer': DEFAULT_APP_ACTION if sys.platform == 'darwin' else HONEYVIEW_ACTION,
+                'custom_viewer': CUSTOM_VIEWER_ACTION,
+                'favorite': '즐겨찾기 추가/해제',
+            }.get(command)
+            if action is None:
+                return 'break'
             index = self.filtered.index(path)
-            action = self.settings.get(key + '_action', self.settings.get('double_click', default_action()))
-            advance = self.active_tab == 'favorites' and action == '즐겨찾기 추가/해제'
+            advance = self.active_tab == 'favorites' and command == 'favorite'
             self.execute_action(path, action)
             if advance and path not in self.filtered:
                 # Reconciliation preserves the viewport; selection must not scroll it.
@@ -365,6 +454,7 @@ class App(Preferences, tk.Tk):
 
     def load_favorite_metadata(self):
         paths = list(self.favorites)
+        revision = self.file_revision
         def load():
             modified, metadata = {}, {}
             for name in paths:
@@ -376,7 +466,7 @@ class App(Preferences, tk.Tk):
                 except OSError:
                     modified[path] = 0
                     metadata[path] = (0, 0)
-            self.results.put(('favorite_meta', None, (modified, metadata), None))
+            self.results.put(('favorite_meta', revision, (modified, metadata), None))
         self.folder_pool.submit(load)
 
     def cell_width(self):
@@ -652,6 +742,9 @@ class App(Preferences, tk.Tk):
             self.save()
 
     def reconcile_favorites(self, candidates):
+        self.reconcile_cards(candidates)
+
+    def reconcile_cards(self, candidates):
         # Keep surviving card/PhotoImage/worker objects, changing their positions only.
         top = max(0, self.canvas.canvasy(0))
         self.filtered = sort_archives(
@@ -673,7 +766,251 @@ class App(Preferences, tk.Tk):
             ((len(self.filtered) + self.columns() - 1) // self.columns()) * self.row_height())
         self.canvas.yview_moveto(top / max(1, total_height))
         self.refresh_visible()
-        self.status.set(tr(f'즐겨찾기 전체 {len(self.favorites):,}개 · 검색 결과 {len(self.filtered):,}개 · 더블클릭: 설정한 동작 · 우클릭: 파일 위치'))
+        self.status.set(tr(f'{"즐겨찾기 전체" if self.only_favorites.get() else "전체"} {len(candidates):,}개 · 검색 결과 {len(self.filtered):,}개 · 더블클릭: 설정한 동작 · 우클릭: 파일 위치'))
+
+    def update_saved_file_paths(self, old, new):
+        def update(view):
+            if not view:
+                return
+            for key in ('anchor', 'selected'):
+                if view.get(key) == str(old):
+                    view[key] = str(new) if new is not None else None
+        for view in self.views.values():
+            update(view)
+        for tabs in self.tab_views.values():
+            for view in tabs.values():
+                update(view)
+        update(self.pending_restore)
+
+    def changed_snapshot(self, files, modified, metadata, revision, root=None, recursive=True):
+        """Bring background results up to date without resurrecting old file paths."""
+        files = list(files)
+        modified, metadata = dict(modified), dict(metadata)
+        for change_revision, old, new in self.file_changes:
+            if change_revision <= revision:
+                continue
+            present = old in files
+            files = [path for path in files if path != old]
+            old_modified, old_metadata = modified.pop(old, None), metadata.pop(old, None)
+            in_scope = new is not None and root is not None and (
+                new.is_relative_to(root) if recursive else new.parent == root)
+            if new is not None and (present or in_scope):
+                if new not in files:
+                    files.append(new)
+                if new in self.modified or old_modified is not None:
+                    modified[new] = self.modified.get(new, old_modified)
+                if new in self.metadata or old_metadata is not None:
+                    metadata[new] = self.metadata.get(new, old_metadata)
+        return files, modified, metadata
+
+    def apply_file_change(self, old, new):
+        """Update the collections only after a successful rename or trash operation."""
+        self.remember_position()
+        index = self.filtered.index(old) if old in self.filtered else 0
+        self.file_revision += 1
+        self.file_changes.append((self.file_revision, old, new))
+        self.files = [new if path == old else path for path in self.files if path != old or new is not None]
+        if str(old) in self.favorites:
+            self.favorites.remove(str(old))
+            if new is not None:
+                self.favorites.add(str(new))
+        for values in (self.modified, self.metadata):
+            previous = values.pop(old, None)
+            if new is not None and previous is not None:
+                values[new] = previous
+        if str(old) in self.preview_errors:
+            self.preview_errors.remove(str(old))
+            if new is not None:
+                self.preview_errors.add(str(new))
+        self.update_saved_file_paths(old, new)
+        # Recreate the changed card, including on case-insensitive Windows paths.
+        # Its event callbacks and thumbnail worker still capture the old spelling.
+        for card_index, card in list(self.cards.items()):
+            if str(card[0]) == str(old):
+                _, frame, label, window = self.cards.pop(card_index)
+                self.photos.pop(label, None)
+                self.canvas.delete(window)
+                frame.destroy()
+        candidates = [Path(name) for name in self.favorites] if self.only_favorites.get() else self.files
+        self.reconcile_cards(candidates)
+        self.selected_path = new if new in self.filtered else (
+            self.filtered[min(index, len(self.filtered) - 1)] if self.filtered else None)
+        self.paint_selection()
+        if self.filtered:
+            self.remember_position()
+        else:
+            # remember_position deliberately ignores empty collections.
+            key = '__global_favorites__' if self.active_tab == 'favorites' else self.current_folder
+            view = dict(anchor=None, selected=None, fraction=0, query=self.query.get(),
+                        sort=self.sort_order.get(), favorites=self.only_favorites.get())
+            self.tab_views.setdefault(key, {})[self.active_tab] = view
+            if self.current_folder:
+                self.views[self.current_folder] = view.copy()
+        self.save()
+
+    def file_operation_error(self, error, path):
+        messages = {
+            'invalid_name': '사용할 수 없는 파일 이름입니다. 빈 이름, 예약된 이름, 특수문자와 끝의 점·공백을 확인해 주세요.',
+            'missing': '파일을 찾을 수 없습니다. 새로고침 후 다시 시도해 주세요.',
+            'not_file': '압축파일만 변경하거나 삭제할 수 있습니다.',
+            'symlink': '바로가기나 심볼릭 링크는 변경하거나 삭제할 수 없습니다.',
+            'exists': '같은 이름의 파일이 이미 있습니다. 다른 이름을 입력해 주세요.',
+            'permission': '파일을 변경할 권한이 없거나 다른 프로그램에서 사용 중입니다.',
+            'unavailable': '이 위치 또는 실행 환경에서는 이 작업을 안전하게 수행할 수 없습니다. 파일은 변경하지 않았습니다.',
+            'rename_failed': '이름을 변경하지 못했습니다.',
+            'trash_failed': '휴지통으로 보내지 못했습니다. 파일 위치와 사용 권한을 확인해 주세요.',
+        }
+        logging.warning('File operation failed for %s: %s', path, error)
+        messagebox.showerror(tr('파일 작업 실패'),
+                             tr(messages.get(error.code, '파일 작업을 완료하지 못했습니다.')) + '\n\n' + str(path),
+                             parent=getattr(self, 'rename_window', None) or self)
+
+    def rename_file(self, path=None):
+        path = path if path is not None else self.selected_path
+        if path not in self.filtered:
+            return 'break'
+        existing = getattr(self, 'rename_window', None)
+        if existing is not None and existing.winfo_exists():
+            existing.lift()
+            return 'break'
+        dialog = self.rename_window = tk.Toplevel(self)
+        dialog.withdraw()
+        dialog.title(tr('파일 이름 바꾸기'))
+        dialog.transient(self)
+        dialog.resizable(True, True)
+        dialog.configure(bg=self.palette['panel'])
+        body = ttk.Frame(dialog, padding=18)
+        body.pack(fill='both', expand=True)
+        body.columnconfigure(0, weight=1)
+        body.rowconfigure(0, weight=1)
+        name_font = tkfont.Font(dialog, family=self.ui_font, size=self.font_size)
+        original = tk.Text(body, width=1, height=1, wrap='char', font=name_font,
+                           bg=self.palette['panel'], fg=self.palette['fg'],
+                           selectbackground=self.palette['accent'], selectforeground='white',
+                           inactiveselectbackground=self.palette['accent'],
+                           borderwidth=0, highlightthickness=0, padx=0, pady=0,
+                           cursor='xterm', exportselection=False, takefocus=True)
+        original.insert('1.0', path.name)
+        original.configure(state='disabled')
+        original.grid(row=0, column=0, sticky='nsew', pady=(0, 12))
+
+        def select_original(event=None):
+            original.tag_add('sel', '1.0', 'end-1c')
+            return 'break'
+
+        original.bind('<Control-a>', select_original)
+        if sys.platform == 'darwin':
+            original.bind('<Command-a>', select_original)
+        controls = ttk.Frame(body)
+        controls.grid(row=1, column=0, sticky='ew')
+        ttk.Label(controls, text=tr('새 파일 이름')).pack(anchor='w')
+        name = tk.StringVar(value=path.stem)
+        entry = ttk.Entry(controls, textvariable=name, width=1)
+        entry.pack(fill='x', pady=6)
+        ttk.Label(controls, text=tr('확장자 {extension}는 그대로 유지됩니다.'.format(extension=path.suffix))).pack(anchor='w')
+
+        def close():
+            self.rename_window = None
+            dialog.destroy()
+            self.canvas.focus_set()
+
+        def commit(event=None):
+            try:
+                renamed = rename_archive(path, name.get())
+            except FileOperationError as exc:
+                self.file_operation_error(exc, path)
+                entry.focus_set()
+                return 'break'
+            if str(renamed) != str(path):
+                self.apply_file_change(path, renamed)
+                self.status.set(tr('파일 이름을 변경했습니다. {name}'.format(name=renamed.name)))
+            close()
+            return 'break'
+
+        buttons = ttk.Frame(controls)
+        buttons.pack(fill='x', pady=(16, 0))
+        ttk.Button(buttons, text=tr('취소'), command=close).pack(side='right')
+        ttk.Button(buttons, text=tr('이름 바꾸기'), command=commit).pack(side='right', padx=8)
+        dialog.bind('<Return>', commit)
+        dialog.bind('<Escape>', lambda e: close())
+        dialog.protocol('WM_DELETE_WINDOW', close)
+        dialog.update_idletasks()
+        line_height = name_font.metrics('linespace')
+        fixed_height = controls.winfo_reqheight() + 36 + 12
+
+        def required_height(width):
+            # Measure against an explicit pixel width, never an unmapped Text's
+            # displaylines: Windows may still report a one-pixel widget there.
+            available = max(1, width - 36 - 2)
+            lines, line = 1, ''
+            for character in path.name:
+                if character == '\n':
+                    lines, line = lines + 1, ''
+                elif line and name_font.measure(line + character) > available:
+                    lines, line = lines + 1, character
+                else:
+                    line += character
+            return fixed_height + lines * line_height + 4
+
+        left, top, right, bottom = _workarea(self)
+        max_width = max(300, right - left - 40)
+        max_height = max(fixed_height + line_height, bottom - top - max(64, 2 * line_height))
+        min_width = min(max_width, max(360, controls.winfo_reqwidth() + 36))
+        # Keep even the narrowest allowed window wide enough for the complete
+        # filename above the fixed controls within this monitor's work area.
+        low, high = min_width, max_width
+        while low < high:
+            middle = (low + high) // 2
+            if required_height(middle) <= max_height:
+                high = middle
+            else:
+                low = middle + 1
+        min_width = low
+        filename_width = max(name_font.measure(line) for line in path.name.split('\n'))
+        width = min(max_width, max(min_width, filename_width + 36 + 2))
+        height = min(max_height, required_height(width))
+        dialog.minsize(min_width, height)
+        center_dialog(dialog, self, width, height)
+
+        def reflow(event):
+            if event.widget is not dialog:
+                return
+            width = max(min_width, event.width)
+            minimum = min(max_height, required_height(width))
+            if dialog.minsize() != (min_width, minimum):
+                dialog.minsize(min_width, minimum)
+            if event.height < minimum:
+                x = max(left, min(dialog.winfo_x(), right - width - 20))
+                y = max(top, min(dialog.winfo_y(), bottom - minimum - max(64, 2 * line_height)))
+                dialog.geometry(f'{width}x{minimum}+{x}+{y}')
+
+        dialog.deiconify()
+        # Ignore provisional sizes emitted while the native window is mapping;
+        # they must not replace the width calculated from the full filename.
+        dialog.wait_visibility()
+        dialog.bind('<Configure>', reflow, add='+')
+        dialog.grab_set()
+        entry.focus_set()
+        entry.selection_range(0, 'end')
+        return 'break'
+
+    def delete_file(self, path=None):
+        path = path if path is not None else self.selected_path
+        if path not in self.filtered:
+            return 'break'
+        if not messagebox.askyesno(tr('파일 삭제'),
+                tr('다음 파일을 휴지통으로 보내시겠습니까?\n{name}\n\n원본 압축파일이 휴지통으로 이동합니다.'.format(name=path.name)),
+                parent=self, icon='warning', default='no'):
+            return 'break'
+        try:
+            trash_archive(path)
+        except FileOperationError as exc:
+            self.file_operation_error(exc, path)
+            return 'break'
+        self.apply_file_change(path, None)
+        self.status.set(tr('휴지통으로 보냈습니다. {name}'.format(name=path.name)))
+        self.canvas.focus_set()
+        return 'break'
 
     def update_badge(self, frame, path):
         star = getattr(frame, 'favorite_badge', None)
@@ -747,6 +1084,7 @@ class App(Preferences, tk.Tk):
         if str(root.resolve()) != self.current_folder:
             self.navigate(str(root.resolve()))
             return
+        root = root.resolve()
         if self.pending_restore is None:
             self.remember_position()
             self.pending_restore = self.views.get(self.current_folder)
@@ -754,6 +1092,7 @@ class App(Preferences, tk.Tk):
         self.generation += 1
         self.scan_generation += 1
         gen = self.scan_generation
+        revision = self.file_revision
         self.files = []
         self.filtered = []
         self.pending.clear()
@@ -777,7 +1116,7 @@ class App(Preferences, tk.Tk):
                         metadata[path] = (stat.st_size, stat.st_mtime)
                     except OSError:
                         modified[path] = 0
-                self.results.put(('scan', gen, (files, modified, metadata), None))
+                self.results.put(('scan', gen, (files, modified, metadata, revision, root, recursive), None))
             except Exception as exc:
                 self.results.put(('scan', gen, [], str(exc)))
         self.pool.submit(find)
@@ -811,6 +1150,8 @@ class App(Preferences, tk.Tk):
         self.status.set(tr(f'{"즐겨찾기 전체" if self.only_favorites.get() else "전체"} {len(candidates):,}개 · 검색 결과 {len(self.filtered):,}개 · 더블클릭: 설정한 동작 · 우클릭: 파일 위치'))
 
     def add_cards(self, result):
+        if len(result) > 3:
+            result = self.changed_snapshot(*result[:3], *result[3:])
         self.files, modified, metadata = result
         self.modified.update(modified)
         self.metadata.update(metadata)
@@ -947,8 +1288,9 @@ class App(Preferences, tk.Tk):
                     messagebox.showwarning(tr('바탕화면 바로가기'), tr('일부 바로가기 이름을 변경하지 못했습니다.') + '\n\n' + '\n'.join(value['errors']))
                 continue
             if kind == 'favorite_meta':
-                self.modified.update(value[0])
-                self.metadata.update(value[1])
+                _, modified, metadata = self.changed_snapshot(list(value[0]), *value, gen)
+                self.modified.update({p: value for p, value in modified.items() if str(p) in self.favorites})
+                self.metadata.update({p: value for p, value in metadata.items() if str(p) in self.favorites})
                 if self.active_tab == 'favorites':
                     self.reconcile_favorites([Path(name) for name in self.favorites])
                     for path, frame, _, _ in self.cards.values():
@@ -1022,14 +1364,18 @@ class App(Preferences, tk.Tk):
                 messagebox.showerror(tr('꿀뷰 실행 실패'), tr(str(exc)))
 
     def context(self, event, path):
+        self.select_card(path)
         if getattr(self, 'context_menu', None) is not None:
             self.context_menu.destroy()
         menu = self.context_menu = tk.Menu(self, tearoff=False, bg=self.palette['panel'], fg=self.palette['fg'], activebackground=self.palette['accent'], activeforeground='white')
-        menu.add_command(label=tr('★ 즐겨찾기 해제' if str(path) in self.favorites else '☆ 즐겨찾기 추가'), command=lambda: self.toggle_favorite(path))
+        menu.add_command(label=tr('★ 즐겨찾기 해제' if str(path) in self.favorites else '☆ 즐겨찾기 추가'), accelerator=self.shortcut_label('favorite'), command=lambda: self.toggle_favorite(path))
         menu.add_command(label=tr('파일 정보'), command=lambda: self.file_info(path))
-        menu.add_command(label=tr('기본 앱으로 열기' if sys.platform == 'darwin' else '꿀뷰로 열기'), command=lambda: self.open_archive(path))
-        menu.add_command(label=tr('파일 위치 열기'), command=lambda: self.reveal(path))
+        menu.add_command(label=tr('기본 앱으로 열기' if sys.platform == 'darwin' else '꿀뷰로 열기'), accelerator=self.shortcut_label('viewer'), command=lambda: self.open_archive(path))
+        menu.add_command(label=tr('파일 위치 열기'), accelerator=self.shortcut_label('reveal'), command=lambda: self.reveal(path))
         menu.add_command(label=tr('경로 복사'), command=lambda: (self.clipboard_clear(), self.clipboard_append(str(path))))
+        menu.add_separator()
+        menu.add_command(label=tr('파일 이름 바꾸기'), accelerator=self.shortcut_label('rename'), command=lambda: self.rename_file(path))
+        menu.add_command(label=tr('파일 삭제'), accelerator=self.shortcut_label('trash'), command=lambda: self.delete_file(path))
         try:
             menu.tk_popup(event.x_root, event.y_root)
         finally:
@@ -1048,6 +1394,10 @@ class App(Preferences, tk.Tk):
         self.remember_position()
         self.save()
         self.pending.clear()
+        # Cancel timers before destroying their Tcl commands, including callbacks
+        # registered by child dialogs. Their owning widgets clean up the commands.
+        for job in self.tk.splitlist(self.tk.call('after', 'info')):
+            self.tk.call('after', 'cancel', job)
         self.pool.shutdown(wait=False, cancel_futures=True)
         self.folder_pool.shutdown(wait=False, cancel_futures=True)
         self.destroy()

@@ -167,7 +167,7 @@ exit $process.ExitCode
 def copy_notices(destination):
     destination.mkdir(parents=True, exist_ok=True)
     installed = {}
-    for name in ('Pillow', 'pyvips', 'pyvips-binary', 'psutil', 'cffi', 'pycparser', 'PyInstaller'):
+    for name in ('Pillow', 'pyvips', 'pyvips-binary', 'psutil', 'cffi', 'pycparser', 'PyInstaller', 'Send2Trash', 'pywin32'):
         try:
             package = metadata.distribution(name)
         except metadata.PackageNotFoundError:
@@ -255,9 +255,12 @@ RAR·7Z 미리보기용 7-Zip과 외부 뷰어는 별도 설치가 필요합니�
     (staging / 'START-HERE.txt').write_text(instructions, encoding='utf-8')
     commit = subprocess.run(['git', 'rev-parse', 'HEAD'], cwd=ROOT,
                             capture_output=True, text=True, check=False)
+    changes = subprocess.run(['git', 'status', '--porcelain'], cwd=ROOT,
+                             capture_output=True, text=True, check=False)
     info = dict(version=version, target=TARGETS[target, arch],
                 built_at=datetime.now(timezone.utc).isoformat(),
                 source_commit=commit.stdout.strip() if commit.returncode == 0 else None,
+                source_worktree_dirty=bool(changes.stdout.strip()) if changes.returncode == 0 else None,
                 python=platform.python_version(), build_os=platform.platform(),
                 dependencies=packages, frozen_self_test='passed',
                 publisher_signed=False, apple_notarized=False)
@@ -289,6 +292,8 @@ def main():
     work.mkdir(parents=True, exist_ok=True)
     if not args.skip_tests:
         run([sys.executable, '-m', 'unittest', 'discover', '-s', 'tests', '-v'])
+        run([sys.executable, ROOT / 'tests' / 'file_actions_smoke.py'])
+        run([sys.executable, ROOT / 'tests' / 'shortcuts_smoke.py'])
     artifact, binary = freeze(target, arch, version, executable, work)
     frozen_check(binary, target)
     package_release(artifact, target, arch, version, work, args.output_dir.resolve())
