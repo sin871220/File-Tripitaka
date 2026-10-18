@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/sin871220/File-Tripitaka/releases/tag/v1.2.0-beta.1"><strong>베타 다운로드</strong></a>
+  <a href="https://github.com/sin871220/File-Tripitaka/releases/tag/v1.2.1"><strong>1.2.1 다운로드</strong></a>
   &nbsp;·&nbsp;
   <a href="#처음-사용하기">사용 방법</a>
   &nbsp;·&nbsp;
@@ -27,21 +27,21 @@
 
 ## 다운로드
 
-**현재 소스 버전은 1.2.1입니다.** [1.2.1 업데이트 내역](BETA-RELEASE.md)에서 새 기능과 수정 사항을 확인할 수 있습니다. 아래 링크는 현재 공개된 **1.2.0-beta.1** 실행 파일이며, 1.2.1의 추가 기능은 포함하지 않습니다.
+**현재 버전은 1.2.1입니다.** 파일 이름 변경·휴지통 이동, 기능별 단축키와 이름 변경창 개선 등 [1.2.1 업데이트 내역](BETA-RELEASE.md)을 확인하세요.
 
-[v1.2.0-beta.1 다운로드 페이지](https://github.com/sin871220/File-Tripitaka/releases/tag/v1.2.0-beta.1)에서 내 컴퓨터에 맞는 ZIP을 받으세요. Python을 따로 설치할 필요가 없습니다.
+[v1.2.1 다운로드 페이지](https://github.com/sin871220/File-Tripitaka/releases/tag/v1.2.1)에서 내 컴퓨터에 맞는 ZIP을 받으세요. Python을 따로 설치할 필요가 없습니다.
 
-이번 베타의 [Tcl/Tk 추가 고지문](https://github.com/sin871220/File-Tripitaka/releases/download/v1.2.0-beta.1/THIRD-PARTY-NOTICES.txt)도 함께 받아 앱 배포물과 보관해 주세요. 기존 앱 ZIP은 변경하지 않았습니다.
+각 ZIP의 `THIRD-PARTY` 폴더에 Tcl/Tk와 포함 라이브러리의 라이선스·고지문이 들어 있습니다. `SHA256SUMS.txt`로 다운로드한 파일의 무결성을 확인할 수 있습니다.
 
 | 내 컴퓨터 | 받을 파일 | 실행 방법 |
 |---|---|---|
-| Windows 10/11 · 64비트 | [Windows-x64.zip](https://github.com/sin871220/File-Tripitaka/releases/download/v1.2.0-beta.1/File-Tripitaka-v1.2.0-beta.1-Windows-x64.zip) | 압축을 풀고 `FileManDaejanggyeong.exe` 실행 |
-| Mac · Apple Silicon(M1 이상) | [macOS-arm64.zip](https://github.com/sin871220/File-Tripitaka/releases/download/v1.2.0-beta.1/File-Tripitaka-v1.2.0-beta.1-macOS-arm64.zip) | 압축을 풀고 `File Tripitaka.app`을 응용 프로그램 폴더로 이동 |
-| Mac · Intel | [macOS-x86_64.zip](https://github.com/sin871220/File-Tripitaka/releases/download/v1.2.0-beta.1/File-Tripitaka-v1.2.0-beta.1-macOS-x86_64.zip) | 압축을 풀고 `File Tripitaka.app`을 응용 프로그램 폴더로 이동 |
+| Windows 10/11 · 64비트 | [Windows-x64.zip](https://github.com/sin871220/File-Tripitaka/releases/download/v1.2.1/File-Tripitaka-v1.2.1-Windows-x64.zip) | 압축을 풀고 `FileManDaejanggyeong.exe` 실행 |
+| Mac · Apple Silicon(M1 이상) | [macOS-arm64.zip](https://github.com/sin871220/File-Tripitaka/releases/download/v1.2.1/File-Tripitaka-v1.2.1-macOS-arm64.zip) | 압축을 풀고 `File Tripitaka.app`을 응용 프로그램 폴더로 이동 |
+| Mac · Intel | [macOS-x86_64.zip](https://github.com/sin871220/File-Tripitaka/releases/download/v1.2.1/File-Tripitaka-v1.2.1-macOS-x86_64.zip) | 압축을 풀고 `File Tripitaka.app`을 응용 프로그램 폴더로 이동 |
 
 Mac 버전은 **macOS 15 이상**을 지원합니다. Mac의 칩 종류는  → **이 Mac에 관하여**에서 확인할 수 있습니다.
 
-현재는 **배포자 코드 서명·Apple 공증이 없는 베타**라서 운영체제의 실행 경고나 차단이 나타날 수 있습니다. 자세한 실행 조건은 [베타 안내](BETA-RELEASE.md)를 확인하세요. 이전 버전과 변경 사항은 [전체 Releases](https://github.com/sin871220/File-Tripitaka/releases)에 모아 둡니다.
+현재 배포 파일은 **배포자 코드 서명·Apple 공증이 없어** 운영체제의 실행 경고나 차단이 나타날 수 있습니다. 자세한 실행 조건은 [배포 안내](BETA-RELEASE.md)를 확인하세요. 이전 버전과 변경 사항은 [전체 Releases](https://github.com/sin871220/File-Tripitaka/releases)에 모아 둡니다.
 
 ## 이렇게 둘러보세요
 

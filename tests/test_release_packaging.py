@@ -1,8 +1,11 @@
 import ast
+from contextlib import contextmanager
 import hashlib
 import importlib.util
+import json
 from pathlib import Path
 import stat
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -16,6 +19,33 @@ import publish_release
 
 
 class ReleasePackagingTests(unittest.TestCase):
+    @contextmanager
+    def publication(self, version, existing=None):
+        """Exercise the real asset gate while replacing all remote gh calls."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            directory = root / 'dist' / 'releases'
+            directory.mkdir(parents=True)
+            (root / 'BETA-RELEASE.md').write_text('Release notes\n', encoding='utf-8')
+            for label in build_release.TARGETS.values():
+                archive = directory / f'File-Tripitaka-v{version}-{label}.zip'
+                archive.write_bytes(label.encode())
+                digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+                archive.with_suffix('.zip.sha256').write_text(
+                    f'{digest}  {archive.name}\n', encoding='ascii')
+            lookup = subprocess.CompletedProcess(
+                [], 1 if existing is None else 0,
+                stdout='' if existing is None else json.dumps(existing), stderr='')
+            responses = [lookup] + [subprocess.CompletedProcess([], 0)] * 4
+            environment = {'FILETRIPITAKA_RELEASE_TAG': f'v{version}',
+                           'GITHUB_REPOSITORY': 'example/File-Tripitaka',
+                           'GH_TOKEN': 'mock-repository-token'}
+            with patch.object(publish_release, 'ROOT', root), \
+                 patch.object(publish_release, 'identity', return_value=(version, 'File Tripitaka')), \
+                 patch.dict(publish_release.os.environ, environment), \
+                 patch.object(publish_release.subprocess, 'run', side_effect=responses) as run:
+                yield root, run
+
     def test_no_cross_architecture_or_version_mislabeling(self):
         with patch.object(build_release.sys, 'platform', 'darwin'), \
              patch.object(build_release.platform, 'machine', return_value='arm64'):
@@ -56,6 +86,62 @@ class ReleasePackagingTests(unittest.TestCase):
             assets[0].unlink()
             with self.assertRaisesRegex(ValueError, 'all three'):
                 publish_release.release_assets(directory, '1.2.0-beta.1')
+
+    def test_stable_publication_is_latest_and_not_a_prerelease(self):
+        with self.publication('1.2.1') as (root, run):
+            publish_release.main()
+            commands = [call.args[0] for call in run.call_args_list]
+            self.assertEqual([command[2] for command in commands],
+                             ['view', 'create', 'upload', 'edit', 'view'])
+            for command in (commands[1], commands[3]):
+                self.assertIn('--prerelease=false', command)
+                self.assertIn('--latest=true', command)
+                self.assertIn('File Tripitaka v1.2.1', command)
+                self.assertIn(str(root / 'BETA-RELEASE.md'), command)
+            self.assertIn('--draft', commands[1])
+            self.assertIn('--verify-tag', commands[1])
+            self.assertIn('--draft=false', commands[3])
+            uploads = commands[2]
+            for label in build_release.TARGETS.values():
+                self.assertIn(str(root / 'dist' / 'releases' /
+                                  f'File-Tripitaka-v1.2.1-{label}.zip'), uploads)
+            self.assertIn(str(root / 'dist' / 'releases' / 'SHA256SUMS.txt'), uploads)
+
+    def test_beta_publication_stays_prerelease_and_never_latest(self):
+        with self.publication('1.2.2-beta.1') as (_, run):
+            publish_release.main()
+            commands = [call.args[0] for call in run.call_args_list]
+            for command in (commands[1], commands[3]):
+                self.assertIn('--prerelease=true', command)
+                self.assertIn('--latest=false', command)
+                self.assertNotIn('--latest=true', command)
+
+    def test_draft_rerun_can_finish_a_stable_release(self):
+        with self.publication('1.2.1', {'isDraft': True, 'isPrerelease': True}) as (_, run):
+            publish_release.main()
+            commands = [call.args[0] for call in run.call_args_list]
+            self.assertEqual([command[2] for command in commands],
+                             ['view', 'upload', 'edit', 'view'])
+            self.assertIn('--clobber', commands[1])
+            self.assertIn('--prerelease=false', commands[2])
+            self.assertIn('--latest=true', commands[2])
+
+    def test_published_stable_and_beta_assets_are_never_overwritten(self):
+        for version in ('1.2.1', '1.2.2-beta.1'):
+            with self.subTest(version=version), \
+                 self.publication(version, {'isDraft': False, 'isPrerelease': '-beta.' in version}) as (_, run):
+                with self.assertRaisesRegex(RuntimeError, 'already published'):
+                    publish_release.main()
+                run.assert_called_once()
+                self.assertEqual(run.call_args.args[0][2], 'view')
+
+    def test_invalid_checksum_blocks_publication_before_any_remote_call(self):
+        with self.publication('1.2.1') as (root, run):
+            checksum = next((root / 'dist' / 'releases').glob('*.sha256'))
+            checksum.write_text('incorrect\n', encoding='ascii')
+            with self.assertRaisesRegex(ValueError, 'checksum'):
+                publish_release.main()
+            run.assert_not_called()
 
     @unittest.skipUnless(sys.platform == 'darwin', 'ditto is provided by macOS')
     def test_mac_zip_preserves_executable_permission_and_framework_symlinks(self):

@@ -1,10 +1,10 @@
 # File Tripitaka 1.2.1 / 파일만대장경
 
-**2026-10-18 · 소스 업데이트**
+**2026-10-18 · 버전 1.2.1**
 
-파일 이름 변경·휴지통 이동과 기능별 단축키를 추가하고, 이름 변경창과 Windows 소스 실행 방식을 다듬었습니다. 아래 변경 사항은 저장소의 **소스 버전 1.2.1**을 기준으로 합니다.
+파일 이름 변경·휴지통 이동과 기능별 단축키를 추가하고, 이름 변경창과 Windows 소스 실행 방식을 다듬었습니다.
 
-현재 공개된 Windows·Mac 실행 파일은 **[1.2.0-beta.1](https://github.com/sin871220/File-Tripitaka/releases/tag/v1.2.0-beta.1)**입니다. **1.2.1 실행 파일은 아직 Releases에 배포하지 않았습니다.** 기존 베타 ZIP에는 이번 변경 사항이 포함되지 않습니다.
+**[1.2.1 다운로드](https://github.com/sin871220/File-Tripitaka/releases/tag/v1.2.1)**에서 Windows 64비트, Mac Apple Silicon, Mac Intel용 ZIP을 받을 수 있습니다. Python 설치는 필요 없습니다. 기존 설정과 즐겨찾기는 유지합니다.
 
 ## 1.2.1 업데이트 목록
 
@@ -39,14 +39,14 @@
 - 실행 창에 실제 소스 폴더와 버전을 표시합니다. 준비나 실행에 실패하면 오류를 보여 주고 중단합니다.
 - 이 테스트 묶음에는 **Python이나 EXE가 포함되지 않습니다. Windows용 Python 3.12 이상**이 필요하며 필요한 라이브러리는 배치 실행 시 설치합니다. 기존 버전 폴더에 덮어 풀지 말고 새 폴더에 풀어 사용하세요.
 
-## 현재 공개 베타의 실행 안내
+## 실행 안내
 
-다음은 **1.2.0-beta.1 배포 파일**에 대한 안내입니다. Python은 포함되어 있어 별도 설치가 필요 없습니다.
+다음은 **1.2.1 배포 파일**에 대한 안내입니다. Python은 포함되어 있어 별도 설치가 필요 없습니다.
 
 - **Windows 10/11 64비트:** Windows-x64 ZIP을 풀고 `FileManDaejanggyeong.exe`를 실행합니다.
 - **macOS 15 이상:** Apple Silicon(M1 이상)은 macOS-arm64, Intel은 macOS-x86_64 ZIP을 받습니다. 압축을 풀고 `File Tripitaka.app`을 응용 프로그램 폴더로 옮깁니다.
-- 공개 베타의 Windows EXE는 배포자 코드 서명이 없습니다. Mac 앱은 실행 무결성을 위한 임시 서명만 적용되어 있으며 Developer ID 서명·Apple 공증은 없습니다. 운영체제 정책에 따라 실행 경고나 차단이 나타날 수 있습니다.
-- 베타의 `SHA256SUMS.txt`로 ZIP 무결성을 확인할 수 있습니다. 별도 제공된 [Tcl/Tk 추가 고지문](https://github.com/sin871220/File-Tripitaka/releases/download/v1.2.0-beta.1/THIRD-PARTY-NOTICES.txt)도 함께 보관해 주세요.
+- Windows EXE는 배포자 코드 서명이 없습니다. Mac 앱은 실행 무결성을 위한 임시 서명만 적용되어 있으며 Developer ID 서명·Apple 공증은 없습니다. 운영체제 정책에 따라 실행 경고나 차단이 나타날 수 있습니다.
+- `SHA256SUMS.txt`로 ZIP 무결성을 확인할 수 있습니다. 각 ZIP의 `THIRD-PARTY` 폴더에 Tcl/Tk와 포함 라이브러리의 라이선스·고지문이 들어 있습니다.
 
 ## 지원 범위와 설정
 
@@ -56,4 +56,4 @@
 - 휴지통에서 복원한 파일은 **새로고침**으로 다시 불러올 수 있습니다. 휴지통 이동 때 해제된 즐겨찾기는 다시 추가해야 합니다.
 - 오류를 알려주실 때는 OS 버전, CPU 종류, 파일 형식과 재현 단계를 포함해 주세요. 실제 이미지·토큰·민감한 파일 경로는 공개 Issues에 올리지 마세요.
 
-Version 1.2.1 is a source update. The currently published Windows and macOS binaries remain 1.2.0-beta.1; no 1.2.1 binary release is available yet.
+Version 1.2.1 provides Windows x64, macOS Apple Silicon and macOS Intel packages. Python is bundled. Publisher code signing and Apple notarization are not included.

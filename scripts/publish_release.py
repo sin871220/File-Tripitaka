@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Publish only the complete, checksum-verified three-platform beta build."""
+"""Publish only a complete, checksum-verified three-platform release build."""
 import hashlib
 import json
 import os
@@ -34,8 +34,9 @@ def main():
     version, _ = identity()
     tag = os.environ['FILETRIPITAKA_RELEASE_TAG']
     check_tag(version, tag)
-    if '-beta.' not in version:
-        raise ValueError('This workflow only publishes beta prereleases.')
+    prerelease = '-beta.' in version
+    release_flags = [f'--prerelease={str(prerelease).lower()}',
+                     f'--latest={str(not prerelease).lower()}']
     repository = os.environ['GITHUB_REPOSITORY']
     if not os.environ.get('GH_TOKEN'):
         raise ValueError('The publishing job requires its repository-scoped GITHUB_TOKEN.')
@@ -53,12 +54,12 @@ def main():
         if not state['isDraft']:
             # Published packages remain immutable. A rerun is a verification,
             # rather than silently replacing executables downloaded by users.
-            raise RuntimeError('This release is already published. Use a new beta version/tag.')
+            raise RuntimeError('This release is already published. Use a new version/tag.')
     else:
-        subprocess.run(base + ['create', tag, *common, '--draft', '--prerelease', '--verify-tag',
-                              '--latest=false', '--title', title, '--notes-file', str(notes)], check=True)
+        subprocess.run(base + ['create', tag, *common, '--draft', '--verify-tag', *release_flags,
+                              '--title', title, '--notes-file', str(notes)], check=True)
     subprocess.run(base + ['upload', tag, *common, *map(str, assets), '--clobber'], check=True)
-    subprocess.run(base + ['edit', tag, *common, '--draft=false', '--prerelease', '--latest=false',
+    subprocess.run(base + ['edit', tag, *common, '--draft=false', *release_flags,
                           '--title', title, '--notes-file', str(notes)], check=True)
     subprocess.run(base + ['view', tag, *common, '--json', 'url,isPrerelease,assets'], check=True)
 

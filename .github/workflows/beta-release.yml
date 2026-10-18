@@ -1,16 +1,16 @@
-name: Build Windows and macOS beta
+name: Build Windows and macOS releases
 
 on:
   workflow_dispatch:
   push:
     tags:
-      - 'v*-beta.*'
+      - 'v*.*.*'
 
 permissions:
   contents: read
 
 concurrency:
-  group: beta-${{ github.ref }}
+  group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -66,7 +66,7 @@ jobs:
           retention-days: 14
 
   publish:
-    name: Publish tested beta packages
+    name: Publish tested release packages
     if: github.ref_type == 'tag'
     needs: build
     runs-on: ubuntu-24.04
@@ -83,7 +83,7 @@ jobs:
           pattern: File-Tripitaka-*
           path: dist/releases
           merge-multiple: true
-      - name: Check all three packages and publish a prerelease
+      - name: Check all three packages and publish the release
         env:
           GH_TOKEN: ${{ github.token }}
           FILETRIPITAKA_RELEASE_TAG: ${{ github.ref_name }}

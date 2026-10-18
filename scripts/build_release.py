@@ -241,15 +241,15 @@ def package_release(artifact, target, arch, version, work, output):
 Windows: Extract the ZIP and run {identity()[1]}.exe. Python is not required.
 macOS: Extract the ZIP and drag File Tripitaka.app to Applications.
 Use the arm64 build for Apple Silicon, or x86_64 for Intel Macs (macOS 15+).
-This beta has no verified publisher signature or Apple notarization.
-Read BETA-RELEASE.md before opening a downloaded beta.
+This build has no verified publisher signature or Apple notarization.
+Read BETA-RELEASE.md for release notes and execution requirements.
 ZIP/CBZ work directly; RAR/7Z previews require a separate 7-Zip installation.
 External image viewers are installed separately.
 
 윈도우: 압축을 풀고 EXE를 실행하세요. Python 설치는 필요 없습니다.
 맥: 압축을 풀고 File Tripitaka.app을 응용 프로그램으로 옮기세요.
 Apple Silicon은 arm64, Intel Mac은 x86_64 버전을 사용하세요 (macOS 15 이상).
-이 베타는 배포자 서명·Apple 공증을 받지 않았습니다. BETA-RELEASE.md를 읽어 주세요.
+이 배포 파일은 배포자 서명·Apple 공증을 받지 않았습니다. BETA-RELEASE.md를 읽어 주세요.
 RAR·7Z 미리보기용 7-Zip과 외부 뷰어는 별도 설치가 필요합니다.
 '''
     (staging / 'START-HERE.txt').write_text(instructions, encoding='utf-8')
@@ -292,8 +292,8 @@ def main():
     work.mkdir(parents=True, exist_ok=True)
     if not args.skip_tests:
         run([sys.executable, '-m', 'unittest', 'discover', '-s', 'tests', '-v'])
-        run([sys.executable, ROOT / 'tests' / 'file_actions_smoke.py'])
-        run([sys.executable, ROOT / 'tests' / 'shortcuts_smoke.py'])
+        run([sys.executable, ROOT / 'tests' / 'file_actions_smoke.py'], timeout=300)
+        run([sys.executable, ROOT / 'tests' / 'shortcuts_smoke.py'], timeout=300)
     artifact, binary = freeze(target, arch, version, executable, work)
     frozen_check(binary, target)
     package_release(artifact, target, arch, version, work, args.output_dir.resolve())
