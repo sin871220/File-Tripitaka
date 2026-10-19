@@ -31,9 +31,12 @@ from ui_fonts import register_font, configure_fonts
 from preferences import Preferences, detect_honeyview, card_text
 from viewer import (default_action, normalize_action, launch_default, choose_viewer as select_viewer,
                     REVEAL_ACTION, HONEYVIEW_ACTION, DEFAULT_APP_ACTION, CUSTOM_VIEWER_ACTION)
-from archive_core import ARCHIVES, cover, natural, visible_indices, sort_archives
+from archive_core import ARCHIVES, cover, render_edited_cover, natural, visible_indices, sort_archives
 from file_operations import FileOperationError, rename_archive, trash_archive
 from dialog_geometry import center_dialog, _workarea
+from thumbnail_edits import (ThumbnailEditStore, ThumbnailEditDatabaseError,
+                             ThumbnailEditCancelledError, ThumbnailFileChangedError)
+from thumbnail_editor import ThumbnailEditor
 from shortcuts import migrate as migrate_shortcuts, validate as validate_shortcuts, legacy_actions, command_for_key, event_key
 
 DATA = (Path(os.environ['LOCALAPPDATA']) / 'ArchiveShelf' if os.environ.get('LOCALAPPDATA') else
@@ -95,6 +98,12 @@ class App(Preferences, tk.Tk):
         self.pending_restore = None
         self.pool = ThreadPoolExecutor(max_workers=3)
         self.folder_pool = ThreadPoolExecutor(max_workers=1)
+        self.thumbnail_edit_pool = ThreadPoolExecutor(max_workers=1)
+        self.thumbnail_edits = ThumbnailEditStore(DATA / 'thumbnail_edits.json')
+        self.closing = False
+        self.thumbnail_metadata_error_logged = False
+        self.thumbnail_editor_window = None
+        self.thumbnail_revisions = {}
         self.results = queue.Queue()
         self.generation = 0
         self.scan_generation = 0
@@ -204,21 +213,28 @@ class App(Preferences, tk.Tk):
         sorter.bind('<<ComboboxSelected>>', lambda e: self.apply_search())
         tools = ttk.Frame(body, padding=(10, 0, 10, 8))
         tools.pack(fill='x')
-        ttk.Button(tools, text=tr('맨 위로 ↑'), command=lambda: self.scroll_view('moveto', 0)).pack(side='left', padx=10)
-        ttk.Label(tools, text=tr('썸네일 크기')).pack(side='left')
+        tools.columnconfigure(2, weight=1, minsize=44)
+        ttk.Button(tools, text=tr('맨 위로 ↑'), style='Toolbar.TButton',
+                   command=lambda: self.scroll_view('moveto', 0)).grid(row=0, column=0, padx=(0, 6))
+        ttk.Label(tools, text=tr('썸네일 크기')).grid(row=0, column=1)
         self.thumbnail_scale = ttk.Scale(tools, from_=120, to=320, variable=self.thumb_size, command=self.size_changed, length=140)
-        self.thumbnail_scale.pack(side='left', padx=8)
+        self.thumbnail_scale.grid(row=0, column=2, sticky='w', padx=6)
         self.fit_enabled = tk.BooleanVar(value=False)
-        self.fit_button = ttk.Checkbutton(tools, text=tr('창에 맞춤 OFF'), style='Fit.Toolbutton', variable=self.fit_enabled, command=self.toggle_fit)
-        self.fit_button.pack(side='left', padx=(0, 4))
-        ttk.Label(tools, text=tr('미리보기')).pack(side='left', padx=(12, 5))
-        previews = ttk.Combobox(tools, state='readonly', textvariable=self.preview_count, values=['1장', '2장', '3장'], width=4)
-        previews.pack(side='left')
+        self.fit_button = ttk.Checkbutton(tools, text=tr('창에 맞춤 OFF'), style='Toolbar.Fit.Toolbutton', variable=self.fit_enabled, command=self.toggle_fit)
+        self.fit_button.grid(row=0, column=3, padx=(0, 4))
+        ttk.Label(tools, text=tr('미리보기')).grid(row=0, column=4, padx=(6, 4))
+        previews = ttk.Combobox(tools, state='readonly', textvariable=self.preview_count,
+                               values=['1장', '2장', '3장'], width=4, style='Toolbar.TCombobox')
+        previews.grid(row=0, column=5)
         previews.bind('<<ComboboxSelected>>', self.change_preview_count)
-        sampling = self.sampling_control = ttk.Combobox(tools, state='readonly', textvariable=self.preview_sampling, values=['순차 보기', '비율 보기'], width=8)
-        sampling.pack(side='left', padx=6)
+        sampling = self.sampling_control = ttk.Combobox(tools, state='readonly', textvariable=self.preview_sampling,
+                                                      values=['순차 보기', '비율 보기'], width=8, style='Toolbar.TCombobox')
+        sampling.grid(row=0, column=6, padx=(4, 0))
         sampling.configure(state='disabled' if self.preview_count.get() == '1장' else 'readonly')
         sampling.bind('<<ComboboxSelected>>', self.change_preview_count)
+        self.thumbnail_edit_button = ttk.Button(tools, text=tr('썸네일 영역 편집'),
+                                               style='Toolbar.TButton', command=self.edit_thumbnail, state='disabled')
+        self.thumbnail_edit_button.grid(row=0, column=7, sticky='e', padx=(6, 0))
         gallery = ttk.Frame(body)
         gallery.pack(fill='both', expand=True)
         self.canvas = tk.Canvas(gallery, bg='#edf0f5', highlightthickness=0)
@@ -231,8 +247,8 @@ class App(Preferences, tk.Tk):
         self.canvas.bind('<KeyPress>', self.gallery_keypress)
         self.canvas.bind('<Configure>', self.resize)
         self.canvas.bind_all('<MouseWheel>', self.wheel)
-        self.canvas.bind_all('<Button-4>', lambda e: self.scroll_view('scroll', -3, 'units'))
-        self.canvas.bind_all('<Button-5>', lambda e: self.scroll_view('scroll', 3, 'units'))
+        self.canvas.bind_all('<Button-4>', self.wheel)
+        self.canvas.bind_all('<Button-5>', self.wheel)
         self.status = tk.StringVar(value='폴더를 선택해 주세요. ZIP은 바로, RAR·7Z는 7-Zip 설치 후 미리볼 수 있습니다.')
         ttk.Label(self, textvariable=self.status, padding=10).pack(fill='x')
         self.bind('<Map>', lambda event: self.apply_titlebar_theme() if event.widget is self else None, add='+')
@@ -307,8 +323,12 @@ class App(Preferences, tk.Tk):
         self.paint_selection()
 
     def paint_selection(self):
+        self.update_thumbnail_edit_button()
         for path, frame, _, _ in self.cards.values():
             frame.configure(style='SelectedCard.TFrame' if path == self.selected_path else 'Card.TFrame')
+
+    def update_thumbnail_edit_button(self):
+        self.thumbnail_edit_button.state(['!disabled'] if self.selected_path in self.filtered else ['disabled'])
 
     def move_selection(self, event):
         if not self.filtered:
@@ -809,6 +829,10 @@ class App(Preferences, tk.Tk):
         index = self.filtered.index(old) if old in self.filtered else 0
         self.file_revision += 1
         self.file_changes.append((self.file_revision, old, new))
+        self.thumbnail_edits.relocate(old, new if new is not None else old)
+        revision = self.thumbnail_revisions.pop(str(old), 0)
+        if new is not None:
+            self.thumbnail_revisions[str(new)] = revision
         self.files = [new if path == old else path for path in self.files if path != old or new is not None]
         if str(old) in self.favorites:
             self.favorites.remove(str(old))
@@ -864,6 +888,126 @@ class App(Preferences, tk.Tk):
         messagebox.showerror(tr('파일 작업 실패'),
                              tr(messages.get(error.code, '파일 작업을 완료하지 못했습니다.')) + '\n\n' + str(path),
                              parent=getattr(self, 'rename_window', None) or self)
+
+    def edit_thumbnail(self, path=None):
+        path = path if path is not None else self.selected_path
+        if path not in self.filtered:
+            return 'break'
+        existing = self.thumbnail_editor_window
+        if existing is not None and existing.winfo_exists():
+            existing.lift()
+            return 'break'
+        self.thumbnail_editor_window = ThumbnailEditor(
+            self, path, self.palette, self.settings.get('preview_count', 1),
+            self.settings.get('preview_sampling', '순차 보기'),
+            recipes=lambda: self.thumbnail_recipes(path, strict=True) or {},
+            on_apply=lambda slot, entry, box, done: self.save_thumbnail_edit(path, slot, entry, box, done),
+            on_reset=lambda slot, done: self.reset_thumbnail_edit(path, slot, done),
+        )
+        return 'break'
+
+    def thumbnail_recipes(self, path, strict=False):
+        try:
+            return self.thumbnail_edits.get(path)
+        except ThumbnailEditCancelledError:
+            raise
+        except OSError as error:
+            if not self.thumbnail_metadata_error_logged:
+                logging.exception('Unable to read thumbnail edit metadata')
+                self.thumbnail_metadata_error_logged = True
+            if strict:
+                raise OSError(tr('썸네일 편집 정보를 읽지 못했습니다. 설정 폴더의 접근 권한을 확인해 주세요.')) from error
+            # Browsing still works when optional edit metadata is unavailable.
+            return None
+
+    def submit_thumbnail_edit(self, path, operation, done, reset=False):
+        window = self.thumbnail_editor_window
+
+        def work():
+            if self.closing:
+                return
+            error = None
+            try:
+                operation()
+            except ThumbnailEditCancelledError:
+                return
+            except ThumbnailEditDatabaseError:
+                logging.exception('Cannot update damaged thumbnail edit database')
+                error = tr('저장된 썸네일 편집 정보를 읽을 수 없어 덮어쓰지 않았습니다. 오류 로그를 확인해 주세요.')
+            except Exception as exc:
+                logging.exception('Cannot save thumbnail edit for %s', path)
+                if isinstance(exc, ThumbnailFileChangedError):
+                    reason = '읽는 동안 압축파일이 변경되었습니다. 편집기를 다시 열어 적용해 주세요.'
+                elif isinstance(exc, PermissionError):
+                    reason = '파일을 읽거나 설정을 저장할 수 없습니다. 다른 프로그램의 사용 여부와 접근 권한을 확인해 주세요.'
+                elif isinstance(exc, FileNotFoundError):
+                    reason = '압축파일 또는 설정 폴더를 찾을 수 없습니다. 파일 위치를 확인해 주세요.'
+                else:
+                    reason = '썸네일 편집 정보를 저장하지 못했습니다.'
+                detail = f'{type(exc).__name__}: {exc}'[:320]
+                error = tr(reason) + '\n' + tr(f'오류 정보: {detail}\n로그: {DATA / "error.log"}')
+            self.results.put(('thumbnail_edit', None, (path, window, done, reset), error))
+
+        self.thumbnail_edit_pool.submit(work)
+
+    def save_thumbnail_edit(self, path, slot, entry, box, done):
+        self.submit_thumbnail_edit(path, lambda: self.thumbnail_edits.set(path, slot, entry, box), done)
+
+    def reset_thumbnail_edit(self, path, slot, done):
+        self.submit_thumbnail_edit(path, lambda: self.thumbnail_edits.reset(path, slot), done, reset=True)
+
+    def refresh_thumbnail(self, path):
+        """Refresh edits independently of slow gallery jobs, retaining the photo."""
+        key = str(path)
+        revision = self.thumbnail_revisions[key] = self.thumbnail_revisions.get(key, 0) + 1
+        for current, _, label, _ in self.cards.values():
+            if str(current) != key:
+                continue
+            self.pending = [task for task in self.pending if task[2] is not label]
+        count = self.settings.get('preview_count', 1)
+        sampling = self.settings.get('preview_sampling', '순차 보기')
+        scan_generation = self.scan_generation
+
+        def render():
+            if self.closing:
+                return
+            image, error = None, None
+            try:
+                recipes = self.thumbnail_recipes(path, strict=True)
+                if self.closing:
+                    return
+                image = (render_edited_cover(path, DATA / 'cache', recipes, count, sampling)
+                         if recipes else cover(path, DATA / 'cache', count, sampling))
+            except ThumbnailEditCancelledError:
+                return
+            except Exception as exc:
+                if self.closing:
+                    return
+                logging.exception('Edited thumbnail refresh failed: %s', path)
+                error = str(exc)
+            # This result never consumes/decrements a normal gallery worker slot.
+            self.results.put(('thumbnail_refresh', scan_generation,
+                              (path, revision, count, sampling, image), error))
+
+        self.thumbnail_edit_pool.submit(render)
+
+    def display_thumbnail(self, label, image, error=None):
+        """Replace just the pixels/text inside an existing gallery card."""
+        path = getattr(label, 'archive_path', None)
+        if error:
+            if path is not None:
+                self.preview_errors.add(str(path))
+            self.photos.pop(label, None)
+            label.configure(image='', text=tr('미리보기 불가\n' + error[:110]), wraplength=185)
+            return
+        if path is not None:
+            self.preview_errors.discard(str(path))
+        image = image.copy()
+        image.thumbnail((self.thumb_size.get() * self.settings.get('preview_count', 1),
+                         self.thumb_size.get() + 20), Image.Resampling.LANCZOS)
+        photo = ImageTk.PhotoImage(image)
+        self.photos[label] = photo
+        label.configure(image=photo, text='')
 
     def rename_file(self, path=None):
         path = path if path is not None else self.selected_path
@@ -1192,9 +1336,14 @@ class App(Preferences, tk.Tk):
         self.schedule_refresh()
 
     def wheel(self, event):
+        if self.grab_current() is not None:
+            return
         if event.widget.winfo_toplevel() != self:
             return
         if event.widget == self.tree or event.widget == self.favorite_list:
+            return
+        if getattr(event, 'num', None) in (4, 5):
+            self.scroll_view('scroll', -3 if event.num == 4 else 3, 'units')
             return
         if not event.delta:
             return
@@ -1212,6 +1361,7 @@ class App(Preferences, tk.Tk):
         if self.refresh_job is not None:
             self.after_cancel(self.refresh_job)
             self.refresh_job = None
+        self.update_thumbnail_edit_button()
         columns = self.columns()
         wanted = set(visible_indices(len(self.filtered), columns,
                                     self.canvas.canvasy(0), self.canvas.winfo_height(), self.row_height()))
@@ -1283,6 +1433,30 @@ class App(Preferences, tk.Tk):
                 kind, gen, value, error = self.results.get_nowait()
             except queue.Empty:
                 break
+            if kind == 'thumbnail_edit':
+                path, window, done, reset = value
+                if not error:
+                    self.refresh_thumbnail(path)
+                    self.status.set(tr('썸네일 편집을 초기화했습니다.' if reset else '썸네일 편집을 저장했습니다.'))
+                if window is not None and window.winfo_exists():
+                    done(error)
+                elif error:
+                    messagebox.showerror(tr('썸네일 편집'), error, parent=self)
+                continue
+            if kind == 'thumbnail_refresh':
+                path, revision, count, sampling, image = value
+                if (gen != self.scan_generation
+                        or revision != self.thumbnail_revisions.get(str(path), 0)
+                        or count != self.settings.get('preview_count', 1)
+                        or sampling != self.settings.get('preview_sampling', '순차 보기')):
+                    continue
+                # Locate the current card: scrolling/resizing may have replaced
+                # its widgets while the priority render was in progress.
+                for current, _, label, _ in self.cards.values():
+                    if str(current) == str(path):
+                        self.pending = [task for task in self.pending if task[2] is not label]
+                        self.display_thumbnail(label, image, error)
+                continue
             if kind == 'shortcut':
                 if value.get('errors'):
                     messagebox.showwarning(tr('바탕화면 바로가기'), tr('일부 바로가기 이름을 변경하지 못했습니다.') + '\n\n' + '\n'.join(value['errors']))
@@ -1309,33 +1483,36 @@ class App(Preferences, tk.Tk):
                 else:
                     self.add_cards(value)
             else:
-                label, im = value
+                label, im, *revision = value
                 if not label.winfo_exists():
                     continue
                 path = getattr(label, 'archive_path', None)
-                if error:
-                    if path is not None:
-                        self.preview_errors.add(str(path))
-                    label.configure(text=tr('미리보기 불가\n' + error[:110]), wraplength=185)
-                else:
-                    if path is not None:
-                        self.preview_errors.discard(str(path))
-                    im.thumbnail((self.thumb_size.get() * self.settings.get('preview_count', 1), self.thumb_size.get() + 20), Image.Resampling.LANCZOS)
-                    photo = ImageTk.PhotoImage(im)
-                    self.photos[label] = photo
-                    label.configure(image=photo, text='')
+                if revision and revision[0] != self.thumbnail_revisions.get(str(path), 0):
+                    continue
+                self.display_thumbnail(label, im, error)
         while self.pending and self.active < 3:
             gen, path, label = self.pending.pop(0)
             self.active += 1
             count = self.settings.get('preview_count', 1)
             sampling = self.settings.get('preview_sampling', '순차 보기')
-            def load(gen=gen, path=path, label=label, count=count, sampling=sampling):
+            revision = self.thumbnail_revisions.get(str(path), 0)
+            def load(gen=gen, path=path, label=label, count=count, sampling=sampling, revision=revision):
                 try:
-                    im = cover(path, DATA / 'cache', count, sampling)
-                    self.results.put(('cover', gen, (label, im), None))
+                    if self.closing:
+                        return
+                    recipes = self.thumbnail_recipes(path)
+                    if self.closing:
+                        return
+                    im = (render_edited_cover(path, DATA / 'cache', recipes, count, sampling)
+                          if recipes else cover(path, DATA / 'cache', count, sampling))
+                    self.results.put(('cover', gen, (label, im, revision), None))
+                except ThumbnailEditCancelledError:
+                    return
                 except Exception as exc:
+                    if self.closing:
+                        return
                     logging.exception('Cover failed: %s', path)
-                    self.results.put(('cover', gen, (label, None), str(exc)))
+                    self.results.put(('cover', gen, (label, None, revision), str(exc)))
             self.pool.submit(load)
         self.after(75, self.poll)
 
@@ -1369,6 +1546,7 @@ class App(Preferences, tk.Tk):
             self.context_menu.destroy()
         menu = self.context_menu = tk.Menu(self, tearoff=False, bg=self.palette['panel'], fg=self.palette['fg'], activebackground=self.palette['accent'], activeforeground='white')
         menu.add_command(label=tr('★ 즐겨찾기 해제' if str(path) in self.favorites else '☆ 즐겨찾기 추가'), accelerator=self.shortcut_label('favorite'), command=lambda: self.toggle_favorite(path))
+        menu.add_command(label=tr('썸네일 영역 편집'), command=lambda: self.edit_thumbnail(path))
         menu.add_command(label=tr('파일 정보'), command=lambda: self.file_info(path))
         menu.add_command(label=tr('기본 앱으로 열기' if sys.platform == 'darwin' else '꿀뷰로 열기'), accelerator=self.shortcut_label('viewer'), command=lambda: self.open_archive(path))
         menu.add_command(label=tr('파일 위치 열기'), accelerator=self.shortcut_label('reveal'), command=lambda: self.reveal(path))
@@ -1391,15 +1569,20 @@ class App(Preferences, tk.Tk):
             messagebox.showerror(tr('탐색기 실행 실패'), tr(str(exc)))
 
     def close(self):
+        self.closing = True
         self.remember_position()
         self.save()
         self.pending.clear()
+        if self.thumbnail_editor_window is not None and self.thumbnail_editor_window.winfo_exists():
+            self.thumbnail_editor_window.close()
+        self.thumbnail_edits.close()
         # Cancel timers before destroying their Tcl commands, including callbacks
         # registered by child dialogs. Their owning widgets clean up the commands.
         for job in self.tk.splitlist(self.tk.call('after', 'info')):
             self.tk.call('after', 'cancel', job)
         self.pool.shutdown(wait=False, cancel_futures=True)
         self.folder_pool.shutdown(wait=False, cancel_futures=True)
+        self.thumbnail_edit_pool.shutdown(wait=False, cancel_futures=True)
         self.destroy()
 
 

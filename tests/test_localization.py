@@ -29,6 +29,27 @@ class Languages(unittest.TestCase):
         self.assertEqual(translate(path, 'en'), path)
         self.assertEqual(translate('폴더를 찾을 수 없습니다.\n' + path, 'en'), 'Folder not found.\n' + path)
 
+    def test_thumbnail_editor_controls_and_errors_are_translated(self):
+        from thumbnail_editor import RATIO_LABELS
+        labels = (*RATIO_LABELS, '썸네일 영역 편집', '◀ 이전 이미지', '다음 이미지 ▶',
+                  '썸네일 위치', '1번은 오른쪽', '전체 이미지', '화면에 맞춤',
+                  '적용될 썸네일', '자동 썸네일로 복원', '닫기',
+                  '영역을 고른 뒤 적용을 누르세요. 원본 파일은 변경되지 않습니다.',
+                  '미리보기 크기가 올바르지 않습니다.', '썸네일 영역이 올바르지 않습니다.')
+        for korean in labels:
+            with self.subTest(korean=korean):
+                english = translate(korean, 'en')
+                self.assertNotEqual(english, korean)
+                self.assertEqual(translate(english, 'ko'), korean)
+
+    def test_thumbnail_edit_failure_details_keep_exception_and_log_path(self):
+        detail = 'PermissionError: [WinError 5] Access denied'
+        path = r'C:\Users\Example\AppData\Local\ArchiveShelf\error.log'
+        korean = f'오류 정보: {detail}\n로그: {path}'
+        english = translate(korean, 'en')
+        self.assertEqual(english, f'Error details: {detail}\nLog: {path}')
+        self.assertEqual(translate(english, 'ko'), korean)
+
     def test_invalid_language_does_not_save(self):
         view = Preferences()
         view.settings = {}

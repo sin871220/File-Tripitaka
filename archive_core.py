@@ -1,13 +1,15 @@
 """Archive cover loading. Archive members are never extracted onto user folders."""
 import hashlib
 import io
+import json
 import os
 from pathlib import Path
 import re
 import shutil
 import subprocess
 import zipfile
-from PIL import Image, ImageOps
+import warnings
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 ARCHIVES = {'.zip', '.cbz', '.rar', '.cbr', '.7z', '.cb7'}
 IMAGES = {'.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif', '.tif', '.tiff'}
@@ -112,25 +114,97 @@ def cover(path, cache, preview_count=1, sampling='순차 보기'):
     return im
 
 
-def decode_thumbnail(data):
+def decode_preview(data, max_size=(1600, 1600), box=None):
+    """Decode an oriented preview, cropping original pixels before reduction.
+
+    Boxes use normalized coordinates in the visually oriented image, so a saved
+    selection is independent of the editor's zoom and preview resolution.
+    """
+    from large_thumbnail import thumbnail, validate_options, crop_pixels
+    max_size, box = validate_options(max_size, box)
+    if len(data) > MAX_IMAGE:
+        raise ValueError('대표 이미지가 64MB를 초과합니다.')
     try:
-        source = Image.open(io.BytesIO(data))
-    except Image.DecompressionBombError:
+        with warnings.catch_warnings():
+            warnings.simplefilter('error', Image.DecompressionBombWarning)
+            source = Image.open(io.BytesIO(data))
+    except (Image.DecompressionBombError, Image.DecompressionBombWarning, UnidentifiedImageError):
         source = None
     if source is None:
-        from large_thumbnail import thumbnail
-        im = thumbnail(data)
+        return thumbnail(data, max_size=max_size, box=box)
     else:
         with source:
             large = source.width * source.height > 20_000_000
             if not large:
-                source.thumbnail((320, 340))
-                im = ImageOps.exif_transpose(source).convert('RGB')
-                im.thumbnail((320, 340))
+                im = ImageOps.exif_transpose(source)
+                if box is not None:
+                    im = im.crop(crop_pixels(im.width, im.height, box))
+                im.thumbnail(max_size, Image.Resampling.LANCZOS)
+                return im.convert('RGB')
         if large:
-            from large_thumbnail import thumbnail
-            im = thumbnail(data)
-    return im
+            return thumbnail(data, max_size=max_size, box=box)
+
+
+def decode_thumbnail(data):
+    return decode_preview(data, max_size=(320, 340))
+
+
+def render_edited_cover(path, cache, recipes, preview_count=1, sampling='순차 보기'):
+    """Render per-sample edits; physical order remains 3,2,1 (or 2,1).
+
+    ``recipes`` maps zero-based sample slots to ``{'entry': name, 'box': box}``.
+    JSON string keys and a list of slot recipes are also accepted. Missing or
+    stale entries fall back to the automatically sampled image for that slot.
+    """
+    if not recipes:
+        return cover(path, cache, preview_count, sampling)
+    from large_thumbnail import validate_options
+    preview_count = max(1, min(3, int(preview_count)))
+    path = Path(path).resolve()
+    entries = image_entries(path)
+    by_name = {entry[0]: entry for entry in entries}
+    selected = []
+    for slot, index in enumerate(preview_indices(len(entries), preview_count, sampling)):
+        recipe = (recipes.get(slot, recipes.get(str(slot))) if isinstance(recipes, dict)
+                  else recipes[slot] if isinstance(recipes, (tuple, list)) and slot < len(recipes)
+                  else None)
+        entry, box = entries[index], None
+        if isinstance(recipe, dict) and recipe.get('entry') in by_name:
+            try:
+                _, box = validate_options((320, 340), recipe.get('box'))
+                entry = by_name[recipe['entry']]
+            except ValueError:
+                # Ignore a malformed stored edit instead of losing the cover.
+                box = None
+        selected.append((entry, box))
+    stat = path.stat()
+    specification = {'schema': 'edited-cover-v1', 'path': str(path),
+                     'size': stat.st_size, 'mtime_ns': stat.st_mtime_ns,
+                     'count': preview_count, 'sampling': sampling, 'selected': selected}
+    key = hashlib.sha256(json.dumps(specification, ensure_ascii=False, sort_keys=True,
+                                    separators=(',', ':')).encode('utf-8')).hexdigest()
+    target = Path(cache) / (key + '.png')
+    if target.exists():
+        with Image.open(target) as cached:
+            return cached.copy()
+    images = []
+    for entry, box in selected:
+        try:
+            images.append(decode_preview(read_image_entry(path, entry), (320, 340), box))
+        except Exception:
+            if not images:
+                raise
+    image = side_by_side_thumbnail(images) if len(images) > 1 else images[0]
+    target.parent.mkdir(parents=True, exist_ok=True)
+    import tempfile
+    with tempfile.NamedTemporaryFile(dir=target.parent, suffix='.png', delete=False) as stream:
+        temporary = Path(stream.name)
+    try:
+        image.save(temporary, format='PNG')
+        temporary.replace(target)
+    finally:
+        temporary.unlink(missing_ok=True)
+    return image
 
 
 def side_by_side_thumbnail(images):

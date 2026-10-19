@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/sin871220/File-Tripitaka/releases/tag/v1.2.1"><strong>1.2.1 다운로드</strong></a>
+  <a href="https://github.com/sin871220/File-Tripitaka/releases/tag/v1.2.2"><strong>1.2.2 다운로드</strong></a>
   &nbsp;·&nbsp;
   <a href="#처음-사용하기">사용 방법</a>
   &nbsp;·&nbsp;
@@ -27,17 +27,17 @@
 
 ## 다운로드
 
-**현재 버전은 1.2.1입니다.** 파일 이름 변경·휴지통 이동, 기능별 단축키와 이름 변경창 개선 등 [1.2.1 업데이트 내역](BETA-RELEASE.md)을 확인하세요.
+**현재 버전은 1.2.2입니다.** 원하는 이미지와 영역을 골라 저장하는 썸네일 편집기를 추가했습니다. [1.2.2 업데이트 내역](BETA-RELEASE.md#122-업데이트-목록)을 확인하세요.
 
-[v1.2.1 다운로드 페이지](https://github.com/sin871220/File-Tripitaka/releases/tag/v1.2.1)에서 내 컴퓨터에 맞는 ZIP을 받으세요. Python을 따로 설치할 필요가 없습니다.
+[v1.2.2 다운로드 페이지](https://github.com/sin871220/File-Tripitaka/releases/tag/v1.2.2)에서 내 컴퓨터에 맞는 ZIP을 받으세요. Python을 따로 설치할 필요가 없습니다.
 
 각 ZIP의 `THIRD-PARTY` 폴더에 Tcl/Tk와 포함 라이브러리의 라이선스·고지문이 들어 있습니다. `SHA256SUMS.txt`로 다운로드한 파일의 무결성을 확인할 수 있습니다.
 
 | 내 컴퓨터 | 받을 파일 | 실행 방법 |
 |---|---|---|
-| Windows 10/11 · 64비트 | [Windows-x64.zip](https://github.com/sin871220/File-Tripitaka/releases/download/v1.2.1/File-Tripitaka-v1.2.1-Windows-x64.zip) | 압축을 풀고 `FileManDaejanggyeong.exe` 실행 |
-| Mac · Apple Silicon(M1 이상) | [macOS-arm64.zip](https://github.com/sin871220/File-Tripitaka/releases/download/v1.2.1/File-Tripitaka-v1.2.1-macOS-arm64.zip) | 압축을 풀고 `File Tripitaka.app`을 응용 프로그램 폴더로 이동 |
-| Mac · Intel | [macOS-x86_64.zip](https://github.com/sin871220/File-Tripitaka/releases/download/v1.2.1/File-Tripitaka-v1.2.1-macOS-x86_64.zip) | 압축을 풀고 `File Tripitaka.app`을 응용 프로그램 폴더로 이동 |
+| Windows 10/11 · 64비트 | [Windows-x64.zip](https://github.com/sin871220/File-Tripitaka/releases/download/v1.2.2/File-Tripitaka-v1.2.2-Windows-x64.zip) | 압축을 풀고 `FileManDaejanggyeong.exe` 실행 |
+| Mac · Apple Silicon(M1 이상) | [macOS-arm64.zip](https://github.com/sin871220/File-Tripitaka/releases/download/v1.2.2/File-Tripitaka-v1.2.2-macOS-arm64.zip) | 압축을 풀고 `File Tripitaka.app`을 응용 프로그램 폴더로 이동 |
+| Mac · Intel | [macOS-x86_64.zip](https://github.com/sin871220/File-Tripitaka/releases/download/v1.2.2/File-Tripitaka-v1.2.2-macOS-x86_64.zip) | 압축을 풀고 `File Tripitaka.app`을 응용 프로그램 폴더로 이동 |
 
 Mac 버전은 **macOS 15 이상**을 지원합니다. Mac의 칩 종류는  → **이 Mac에 관하여**에서 확인할 수 있습니다.
 
@@ -49,6 +49,7 @@ Mac 버전은 **macOS 15 이상**을 지원합니다. Mac의 칩 종류는  �
 |---|---|
 | **폴더 전체를 한 화면에** | 선택한 폴더와 하위 폴더의 압축파일을 모아 보고, 파일명 검색과 이름·수정 날짜 정렬로 좁혀 갑니다. |
 | **표지와 본문을 함께** | 기본 1장 보기에서 2장·3장 보기로 바꾸면 여러 이미지를 나란히 확인할 수 있습니다. |
+| **썸네일 영역 편집** | 압축파일 안의 이미지와 표시할 영역을 직접 골라 저장합니다. 1장·2장·3장 보기의 각 위치를 따로 편집할 수 있습니다. |
 | **파일별 즐겨찾기** | 폴더가 달라도 즐겨찾기 탭에서 한꺼번에 확인합니다. 전체 탭에서는 오른쪽 위 노란 별로 구분합니다. |
 | **파일 정리** | 우클릭 메뉴와 F2로 이름을 바꾸고, Delete로 확인 후 휴지통에 보냅니다. 이름을 바꿔도 즐겨찾기를 유지합니다. |
 | **끊김을 줄인 탐색** | 페이지를 넘기지 않고 계속 스크롤합니다. 화면 근처의 카드만 생성하며, 탭마다 스크롤 위치를 기억합니다. |
@@ -105,6 +106,25 @@ Mac의 기본 더블클릭 동작은 **Finder에서 파일 위치 열기**입니
 
 화면 순서의 숫자는 선택된 이미지의 순서입니다. 맨 앞 이미지가 오른쪽에 옵니다. 이미지가 부족하면 실제 장수만 표시하고 같은 이미지를 중복하지 않습니다.
 
+### 썸네일 영역 편집
+
+가로나 세로로 긴 이미지에서 원하는 부분을 대표 썸네일로 고를 수 있습니다.
+
+1. 압축파일 썸네일을 선택한 뒤 **썸네일 크기·창에 맞춤·미리보기와 같은 줄 오른쪽의 썸네일 영역 편집 버튼**을 누르세요. **오른쪽 클릭 → 썸네일 영역 편집**으로도 열 수 있습니다.
+2. **썸네일 위치**와 압축파일 안의 이미지를 고르세요. 2장·3장 보기에서는 위치마다 다른 이미지와 영역을 저장할 수 있습니다. **1번은 오른쪽**이며 이미지가 부족하면 실제 장수만 선택할 수 있습니다.
+3. 기본은 **자유 비율**입니다. 미리보기에서 드래그해 영역을 만들고, 안쪽을 끌어 이동하거나 테두리의 손잡이로 크기를 바꾸세요. **썸네일 비율 (127:180)**을 고르면 1270×1800과 같은 세로 비율로 고정합니다. 원본 비율과 전체 이미지 선택도 지원하며, 휠·슬라이더로 확대하고 **Space+드래그**로 이미지를 이동할 수 있습니다.
+4. 오른쪽 미리보기로 결과를 확인하고 **적용**을 누르세요. 창을 열어 둔 채 다른 썸네일 위치도 편집할 수 있습니다. 저장한 영역을 지우려면 해당 위치를 선택하고 **자동 썸네일로 복원**을 누르세요.
+
+**원본 압축파일과 내부 이미지는 변경하지 않습니다.** 이미지 이름과 선택 영역만 별도 저장하며, 적용하지 않은 선택은 닫을 때 저장하지 않습니다.
+
+적용·복원 시에는 일반 썸네일 생성 대기열과 별도로 해당 미리보기를 갱신합니다. 새 이미지가 준비될 때까지 기존 썸네일을 보여 주고, 준비되면 카드의 이미지만 교체하며 스크롤 위치·선택·다른 카드를 유지합니다.
+
+EXIF 회전 정보를 반영한 화면을 기준으로 영역을 저장합니다. 확대된 작은 미리보기를 다시 자르는 대신 **원본 이미지의 해당 영역을 자른 뒤 축소**하며, 큰 이미지는 별도 디코더로 처리합니다.
+
+편집 내용은 경로 대신 **압축파일 내용으로 만든 식별값**에 연결합니다. 이름을 바꾸거나 폴더·드라이브를 옮겨도 다시 읽을 때 복원하고, 내용이 같은 복사본에도 같은 편집 내용을 적용합니다. 압축파일 내용이 바뀌거나 다시 압축하면 다른 파일로 인식할 수 있어 영역을 다시 지정해야 할 수 있습니다.
+
+영역 편집은 설정 폴더의 **`thumbnail_edits.json`**에 저장합니다. 다른 컴퓨터에서도 유지하려면 압축파일뿐 아니라 이 파일도 설정과 함께 옮겨야 합니다. [운영체제별 설정 위치](#문제를-발견했나요)를 참고하세요.
+
 ### 화면 꾸미기
 
 - **창에 맞춤 ON/OFF:** 현재 4열이면 4열, 5열이면 5열을 유지하면서 창 너비를 채웁니다. 슬라이더를 움직이면 OFF로 돌아옵니다.
@@ -137,7 +157,7 @@ Mac의 기본 더블클릭 동작은 **Finder에서 파일 위치 열기**입니
 | Windows | `%LOCALAPPDATA%\ArchiveShelf` |
 | macOS | `~/Library/Application Support/File Tripitaka` |
 
-`settings.json`에는 설정과 즐겨찾기, `cache/`에는 썸네일이 저장됩니다. 오류를 살펴볼 때는 `error.log`와 `crash.log`를 확인하세요. 로그를 공개하기 전에는 개인 경로와 민감한 내용이 들어 있는지 확인해 주세요.
+`settings.json`에는 설정과 즐겨찾기, `cache/`에는 썸네일이 저장됩니다. **영역 편집 내용은 `thumbnail_edits.json`**에 따로 저장합니다. 다른 컴퓨터로 편집 내용을 옮기려면 앱을 닫고 이 파일을 대상 컴퓨터의 같은 설정 폴더로 복사하세요. 캐시만 옮겨서는 영역 편집 내용이 유지되지 않습니다. 오류를 살펴볼 때는 `error.log`와 `crash.log`를 확인하세요. 로그를 공개하기 전에는 개인 경로와 민감한 내용이 들어 있는지 확인해 주세요.
 
 Mac에서 이전 소스 실행으로 만든 `~/.local/share/ArchiveShelf/settings.json`이 있으면 새 저장 위치로 한 번 가져옵니다. Windows의 기존 설정 위치는 유지합니다. Windows에서 언어를 바꾸면 현재 EXE를 가리키는 기존 바탕화면 바로가기 이름도 변경합니다.
 
@@ -159,9 +179,11 @@ Windows 소스 실행은 **새 버전 ZIP을 새 폴더에 전부 푼 뒤 그 �
 
 공유폴더를 통해 다른 Windows 컴퓨터로 옮겨 테스트할 때는 `python scripts/package_windows_test.py`로 **Windows-Test.zip 하나**를 만들 수 있습니다. 코드·아이콘·글꼴과 실행 배치가 한 버전 폴더에 들어가며, Git 미추적 신규 모듈도 포함합니다. ZIP 전체를 옮겨 새 폴더에 푼 뒤 그 안의 배치를 실행하세요. 이 테스트 ZIP에는 Python이나 EXE가 포함되지 않습니다.
 
+**배포 ZIP과 소스 테스트 ZIP은 다릅니다.** GitHub Releases의 `Windows-x64`·`macOS-arm64`·`macOS-x86_64` 패키지는 Python을 포함합니다. `python scripts/package_windows_test.py`로 만드는 `File-Tripitaka-v1.2.2-Windows-Test.zip`은 소스 실행용이므로 Windows용 Python 3.12 이상을 따로 설치해야 합니다.
+
 - Windows: 소스 실행은 `run-windows.bat`, 배포 빌드는 `build-windows.bat`.
 - macOS: `build-macos.sh`. Apple Silicon과 Intel은 해당 CPU용 Python 환경에서 각각 빌드합니다.
-- GitHub Actions: 베타 태그를 푸시하면 Windows·Mac의 테스트, 빌드, 패키징 점검을 통과한 파일을 prerelease로 배포합니다. 수동 실행은 빌드 산출물을 만듭니다.
+- GitHub Actions: 버전 태그를 푸시하면 Windows·Mac의 테스트, 빌드, 패키징 점검을 통과한 파일을 배포합니다. 정식 버전은 일반 Release로, `-beta.`가 붙은 버전은 prerelease로 배포합니다. 수동 실행은 빌드 산출물을 만듭니다.
 
 ```sh
 python -m unittest discover -s tests -v
@@ -169,6 +191,7 @@ python tests/gui_smoke.py
 python tests/language_smoke.py
 python tests/file_actions_smoke.py
 python tests/shortcuts_smoke.py
+python tests/thumbnail_editor_smoke.py
 ```
 
 패키징된 앱은 `--self-test --report <JSON 경로>`로 ZIP 처리·네이티브 디코더·Tk GUI·언어 전환을 점검할 수 있습니다. 자동 점검이 모든 기기에서의 실사용 검증을 대신하지는 않습니다.

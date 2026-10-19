@@ -66,6 +66,9 @@ class Preferences:
         style.theme_use('clam')
         style.configure('.', background=p['panel'], foreground=p['fg'], font=(self.ui_font, self.font_size), bordercolor=p['border'])
         style.configure('TButton', padding=(12, 7), background=p['field'], borderwidth=1, relief='flat', lightcolor=p['border'], darkcolor=p['border'], focuscolor=p['accent'])
+        style.configure('Toolbar.TButton', padding=(6, 7))
+        style.configure('Toolbar.Fit.Toolbutton', padding=(6, 7))
+        style.configure('Toolbar.TCombobox', padding=(6, 7))
         style.map('TButton', background=[('pressed', p['accent']), ('active', p['hover'])], bordercolor=[('focus', p['accent']), ('active', p['accent'])], foreground=[('disabled', p['muted'])])
         style.configure('Fit.Toolbutton', padding=(10, 7), background=p['field'], foreground=p['fg'])
         style.map('Fit.Toolbutton', background=[('selected', p['accent']), ('active', p['hover'])],

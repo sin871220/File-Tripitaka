@@ -66,6 +66,7 @@ def _archive_checks(directory, report):
 
 def _native_checks(jpeg_data, report):
     import pyvips
+    from PIL import Image
     from large_thumbnail import thumbnail
 
     # Call the isolated decoder directly: even this small fixture must exercise
@@ -77,6 +78,66 @@ def _native_checks(jpeg_data, report):
              'Native worker did not honor thumbnail bounds')
     report['libvips'] = '.'.join(str(pyvips.version(i)) for i in range(3))
     report['checks'].append('native_libvips_loader_and_isolated_thumbnail_worker')
+    # A rotated two-color fixture proves the packaged worker applies a crop in
+    # visual coordinates and honors the new dimensions, including its CLI flags.
+    source = Image.new('RGB', (200, 100), 'red')
+    source.paste('blue', (100, 0, 200, 100))
+    orientation = Image.Exif()
+    orientation[274] = 6
+    output = io.BytesIO()
+    source.save(output, format='JPEG', exif=orientation, quality=100, subsampling=0)
+    cropped = thumbnail(output.getvalue(), (80, 80), (0, .5, 1, 1))
+    _require(cropped.mode == 'RGB' and cropped.size == (80, 80),
+             'Native crop worker did not honor its requested output dimensions')
+    _require(max(abs(actual - expected) for actual, expected in
+                 zip(cropped.getpixel((40, 40)), (0, 0, 255))) <= 5,
+             'Native crop worker did not crop after EXIF orientation')
+    report['checks'].append('native_isolated_crop_after_exif_orientation')
+
+
+def _thumbnail_edit_checks(archive, directory, report):
+    """Verify persistence and crop rendering without touching the app database."""
+    import shutil
+    from archive_core import cover, render_edited_cover
+    from thumbnail_edits import ThumbnailEditStore
+
+    original = archive.read_bytes()
+    database = directory / 'edit-check' / 'thumbnail_edits.json'
+    store = ThumbnailEditStore(database)
+    restarted = None
+    try:
+        box = [0.25, 0.25, 0.75, 0.75]
+        store.set(archive, 0, '画像03.webp', box)
+        restarted = ThumbnailEditStore(database)
+        recipe = restarted.get(archive)
+        _require(recipe == {'0': {'entry': '画像03.webp', 'box': box}},
+                 'Thumbnail crop recipe did not survive reopening its store')
+        recipe['0']['box'][0] = 0
+        _require(restarted.get(archive)['0']['box'] == box,
+                 'Thumbnail store returned a mutable internal recipe')
+        cropped = render_edited_cover(archive, directory / 'edit-cache', restarted.get(archive))
+        _require(cropped.size == (48, 72), 'Edited thumbnail did not crop original image coordinates')
+        color = cropped.getpixel((24, 36))[:3]
+        _require(max(abs(a - b) for a, b in zip(color, (40, 75, 215))) <= 2,
+                 'Edited thumbnail did not use its selected archive member')
+        # Keep the copied file outside the scanned fixture library.
+        moved = directory / 'renamed-and-moved.cbz'
+        shutil.copyfile(archive, moved)
+        _require(restarted.get(moved) == restarted.get(archive),
+                 'Byte-identical archive at a new path lost its crop recipe')
+        _require(restarted.reset(moved, 0) and store.get(archive) is None,
+                 'Crop reset did not remove the persisted content recipe')
+        automatic = cover(archive, directory / 'edit-cache')
+        restored = render_edited_cover(archive, directory / 'edit-cache', store.get(archive))
+        _require(restored.size == automatic.size and restored.tobytes() == automatic.tobytes(),
+                 'Reset did not restore the automatic archive thumbnail')
+        _require(archive.read_bytes() == original and moved.read_bytes() == original,
+                 'Thumbnail editing modified an archive')
+    finally:
+        store.close()
+        if restarted is not None:
+            restarted.close()
+    report['checks'].append('thumbnail_edit_content_identity_persistence_crop_and_reset')
 
 
 def _cancel_callbacks(app):
@@ -165,13 +226,68 @@ def _gui_checks(archive, directory, report):
             _require(application.canvas.yview() == scroll, 'Language switch changed scroll position')
         _require(not errors, 'GUI callback failed: ' + '\n'.join(errors))
         report['checks'].append('english_korean_switch_preserves_cards_selection_and_scroll')
+        # Import and construct the real editor so frozen checks cover its Tk
+        # controls, async image loading, persistence callbacks and gallery refresh.
+        from thumbnail_editor import ThumbnailEditor, valid_box
+        application.edit_thumbnail(archive)
+        editor = application.thumbnail_editor_window
+        _require(isinstance(editor, ThumbnailEditor), 'Thumbnail editor was not created')
+
+        def wait_editor(predicate, failure):
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline:
+                application.update()
+                if errors:
+                    raise RuntimeError(errors[0])
+                if predicate():
+                    return
+                time.sleep(.02)
+            raise RuntimeError(failure)
+
+        wait_editor(lambda: editor._image is not None and len(editor.entries) == 9,
+                    'Thumbnail editor did not asynchronously load its source image')
+        _require(valid_box(editor.selection) is not None, 'Editor has no valid crop selection')
+        editor.entry_combo.current(2)
+        editor.entry_combo.event_generate('<<ComboboxSelected>>')
+        wait_editor(lambda: editor._image is not None and editor._entry_index == 2,
+                    'Thumbnail editor did not switch archive members')
+        editor.selection = (0.25, 0.25, 0.75, 0.75)
+        editor._selection_changed()
+        label = next(card[2] for card in application.cards.values() if card[0] == archive)
+        previous_photo = application.photos[label]
+        editor.apply_button.invoke()
+        wait_editor(lambda: not editor._busy and '0' in editor.recipes
+                    and not application.pending and not application.active
+                    and label in application.photos and application.photos[label] is not previous_photo,
+                    'Thumbnail editor did not save its crop and refresh the gallery')
+        _require(application.thumbnail_edits.get(archive)['0']['entry'] == '画像03.webp',
+                 'Editor Apply did not save its selected archive member')
+        _require(application.selected_path == archive and application.cards == cards
+                 and application.canvas.yview() == scroll,
+                 'Editing a thumbnail changed card identity, selection or scroll')
+        edited_photo = application.photos[label]
+        editor.reset_button.invoke()
+        wait_editor(lambda: not editor._busy and editor._image is not None
+                    and application.thumbnail_edits.get(archive) is None
+                    and not application.pending and not application.active
+                    and label in application.photos and application.photos[label] is not edited_photo,
+                    'Thumbnail editor did not reset to the automatic thumbnail')
+        editor.close()
+        _require(not errors, 'GUI callback failed: ' + '\n'.join(errors))
+        report['checks'].append('tk_thumbnail_editor_async_load_apply_reset_and_gallery_refresh')
     finally:
         if application is not None:
             # Settle worker threads before removing their temporary files; cancel
             # Tk timers before destroying the root to avoid post-destroy callbacks.
             application.pending.clear()
+            editor = getattr(application, 'thumbnail_editor_window', None)
+            if editor is not None:
+                if editor.winfo_exists():
+                    editor.close()
+                editor._executor.shutdown(wait=True, cancel_futures=True)
             application.pool.shutdown(wait=True, cancel_futures=True)
             application.folder_pool.shutdown(wait=True, cancel_futures=True)
+            application.thumbnail_edit_pool.shutdown(wait=True, cancel_futures=True)
             _cancel_callbacks(application)
             application.close()
         for name, original in blocked_dialogs.items():
@@ -197,6 +313,7 @@ def _run_checks(directory, report):
     _require(renamed.read_bytes() == b'isolated rename fixture', 'Rename collision changed the destination')
     report['checks'].append('native_trash_backend_import_and_no_replace_archive_rename')
     archive, jpeg_data = _archive_checks(directory, report)
+    _thumbnail_edit_checks(archive, directory, report)
     _native_checks(jpeg_data, report)
     _gui_checks(archive, directory, report)
 
