@@ -4,6 +4,7 @@ Run ``python tests/scroll_smoke.py`` on a desktop with Tk available. No user
 library, saved preferences, or external viewer is read or changed.
 """
 from contextlib import ExitStack
+from itertools import count
 import math
 import os
 from pathlib import Path
@@ -98,12 +99,30 @@ class ScrollSmoke(unittest.TestCase):
         app = self.app
         self.assertEqual(float(app.canvas.cget('yscrollincrement')), 1)
         start = app.canvas.canvasy(0)
-        self.wheel()
-        self.assertTrue(app.smooth_scroll.active)
-        self.wait_for(lambda: app.canvas.canvasy(0) > start,
-                      'Wheel did not begin moving')
-        self.assertLess(app.canvas.canvasy(0), start + 90)
-        self.finish_motion()
+        positions = []
+        ticks = count(0, .016)
+
+        def move(top):
+            app.move_scroll_pixel(top)
+            positions.append(app.canvas.canvasy(0))
+
+        # Keep real Tk timers, wheel dispatch and rounded canvas positions.
+        # A busy CI desktop can drain several frames inside one update(), or
+        # delay the first timer until a time-based animation catches up. Give
+        # this frame-by-frame assertion a controlled elapsed clock and record
+        # each actual move instead of depending on when update() returns.
+        motion = module.SmoothScroller(
+            position=lambda: app.canvas.canvasy(0), limit=app.scroll_limit,
+            move=move, schedule=app.after, cancel=app.after_cancel,
+            clock=lambda: next(ticks))
+        with patch.object(app, 'smooth_scroll', motion):
+            self.wheel()
+            self.assertTrue(motion.active)
+            self.assertEqual(app.canvas.canvasy(0), start, 'Wheel moved before its first animation frame')
+            self.finish_motion()
+        self.assertTrue(any(start < position < start + 90 for position in positions), positions)
+        self.assertEqual(positions, sorted(positions))
+        self.assertTrue(all(start <= position <= start + 90 for position in positions))
         self.assertAlmostEqual(app.canvas.canvasy(0) - start, 90, delta=1)
 
     def test_rapid_wheel_input_accumulates_and_reverses(self):
