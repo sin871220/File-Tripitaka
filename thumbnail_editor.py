@@ -843,6 +843,14 @@ class ThumbnailEditor(tk.Toplevel):
     def _destroyed(self, event):
         if event.widget is self:
             self._shutdown()
+            # A running archive read may keep this Python dialog alive after
+            # its window is gone. Release Tcl-owned objects on the UI thread,
+            # rather than letting that worker dispose of them later.
+            self._photo = None
+            self._preview_photo = None
+            for name, value in tuple(vars(self).items()):
+                if isinstance(value, tk.Variable):
+                    setattr(self, name, None)
 
     def close(self):
         if not self._closed.is_set():

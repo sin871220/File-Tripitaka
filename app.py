@@ -1590,4 +1590,14 @@ class App(Preferences, tk.Tk):
 
 if __name__ == '__main__':
     logging.info('ArchiveShelf started, virtual scroll build')
-    App().mainloop()
+    # Keep the Tcl interpreter owned by the main thread while outstanding
+    # archive workers finish, including after the visible window is closed.
+    application = App()
+    try:
+        application.mainloop()
+    finally:
+        for executor in (application.pool, application.folder_pool, application.thumbnail_edit_pool):
+            executor.shutdown(wait=True, cancel_futures=True)
+        editor = application.thumbnail_editor_window
+        if editor is not None:
+            editor._executor.shutdown(wait=True, cancel_futures=True)

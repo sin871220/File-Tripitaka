@@ -13,6 +13,7 @@ import threading
 import time
 from types import SimpleNamespace
 import unittest
+import weakref
 from unittest.mock import patch
 import zipfile
 
@@ -310,9 +311,8 @@ class ThumbnailEditorSmoke(unittest.TestCase):
         self.assertAlmostEqual(app.canvas.canvasy(0), original_top, delta=1)
         editor.close()
         app.canvas.event_generate('<MouseWheel>', delta=-120, x=50, y=50)
-        app.update()
-        self.assertGreater(app.canvas.canvasy(0), original_top,
-                           'Main gallery wheel must resume after the modal closes')
+        self.wait_for(lambda: app.canvas.canvasy(0) > original_top,
+                      'Main gallery wheel must resume after the modal closes')
 
     def test_apply_refreshes_loaded_card_while_normal_cover_workers_are_blocked(self):
         app = self.app
@@ -782,6 +782,38 @@ class ThumbnailEditorSmoke(unittest.TestCase):
             editor._executor.shutdown(wait=True, cancel_futures=True)
         self.assertTrue(editor._results.empty())
         self.assertFalse(self.errors, self.errors)
+
+    def test_closed_editor_releases_ui_resources_before_reader_finishes(self):
+        _, path = self.load(count=8, fraction=0)
+        editor = self.open_editor(path)
+        self.wait_for(lambda: editor._photo is not None)
+        variables = [weakref.ref(value) for value in vars(editor).values()
+                     if isinstance(value, module.tk.Variable)]
+        self.assertEqual(len(variables), 8)
+        photo = weakref.ref(editor._photo)
+        started, release = threading.Event(), threading.Event()
+        original_read = thumbnail_editor.archive_core.read_image_entry
+
+        def delayed_read(*args, **kwargs):
+            started.set()
+            if not release.wait(8):
+                raise RuntimeError('Fixture reader was not released')
+            return original_read(*args, **kwargs)
+
+        with patch.object(thumbnail_editor.archive_core, 'read_image_entry', side_effect=delayed_read):
+            editor.change_entry(1)
+            self.wait_for(started.is_set, 'Editor worker did not begin its next read')
+            try:
+                editor.close()
+                self.assertTrue(editor._closed.is_set())
+                self.assertFalse(editor.winfo_exists())
+                self.assertTrue(all(reference() is None for reference in variables),
+                                'A closed editor retained Tcl variables while its worker was running')
+                self.assertIsNone(photo(), 'A closed editor retained its Tk image')
+            finally:
+                release.set()
+            editor._executor.shutdown(wait=True, cancel_futures=True)
+        self.assertTrue(editor._results.empty())
 
 
 if __name__ == '__main__':
