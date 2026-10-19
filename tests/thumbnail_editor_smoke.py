@@ -643,8 +643,14 @@ class ThumbnailEditorSmoke(unittest.TestCase):
                         if not 0 <= right_margin <= 10:
                             issues.append(f'Controls are not right aligned: margin={right_margin}')
                         top_gap = left - top_button.winfo_rootx() - top_button.winfo_width()
-                        if top_gap < 0 or width == 1600 and top_gap < 100:
+                        # A desktop/CI window manager may cap the requested
+                        # 1600px window to its physical screen width. Verify
+                        # the actual cluster never expands to absorb free
+                        # space, rather than assuming a particular screen.
+                        if top_gap < 6:
                             issues.append(f'Extra width must separate Top from the whole cluster: gap={top_gap}')
+                        if cluster.winfo_width() > cluster.winfo_reqwidth():
+                            issues.append('Extra width stretched the thumbnail cluster')
                         if abs(top_button.winfo_rooty() + top_button.winfo_height() / 2 - center) > 2:
                             issues.append('Top and the thumbnail cluster occupy different rows')
                         if app.thumbnail_scale.winfo_width() < 32:
@@ -655,7 +661,7 @@ class ThumbnailEditorSmoke(unittest.TestCase):
                                 > app.winfo_rootx() + app.winfo_width()):
                             issues.append('Edit button extends beyond the main window')
                         self.assertFalse(issues, '; '.join(issues) +
-                                         f' (row={tools.winfo_width()}, cluster={cluster.winfo_width()}, '
+                                         f' (actual_window={app.winfo_width()}, row={tools.winfo_width()}, cluster={cluster.winfo_width()}, '
                                          f'requested={cluster.winfo_reqwidth()}, '
                                          f'fixed={cluster.winfo_reqwidth() - app.thumbnail_scale.winfo_reqwidth()}, '
                                          f'slider={app.thumbnail_scale.winfo_width()})')
