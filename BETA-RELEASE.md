@@ -1,4 +1,52 @@
-# File Tripitaka 1.2.3 / 파일만대장경
+# File Tripitaka 1.2.4 / 파일만대장경
+
+**2026-10-20 · 버전 1.2.4**
+
+미리보기 장수 등의 드롭다운을 펼치고 휠을 돌릴 때 발생하던 오류를 수정했습니다. 스크롤바의 소수 단위 휠 입력도 처리하며, 갤러리·폴더 목록·설정·썸네일 편집기의 휠 동작을 각 영역에서 독립적으로 처리합니다. 기존 설정·즐겨찾기·썸네일 편집 정보는 유지합니다.
+
+**[1.2.4 다운로드](https://github.com/sin871220/File-Tripitaka/releases/tag/v1.2.4)**에서 내 컴퓨터에 맞는 ZIP을 받으세요. 배포 패키지에는 Python이 포함되어 별도로 설치할 필요가 없습니다.
+
+| 운영체제 | 다운로드 |
+|---|---|
+| Windows 10/11 · 64비트 | [Windows-x64.zip](https://github.com/sin871220/File-Tripitaka/releases/download/v1.2.4/File-Tripitaka-v1.2.4-Windows-x64.zip) |
+| macOS 15 이상 · Apple Silicon(M1 이상) | [macOS-arm64.zip](https://github.com/sin871220/File-Tripitaka/releases/download/v1.2.4/File-Tripitaka-v1.2.4-macOS-arm64.zip) |
+| macOS 15 이상 · Intel | [macOS-x86_64.zip](https://github.com/sin871220/File-Tripitaka/releases/download/v1.2.4/File-Tripitaka-v1.2.4-macOS-x86_64.zip) |
+
+## 1.2.4 업데이트 목록
+
+### 드롭다운·스크롤바 휠 오류 수정
+
+- 미리보기 장수·순차/비율 보기·정렬 등의 드롭다운을 펼친 상태에서 휠을 돌리면 발생하던 **`KeyError: 'popdown'`** 오류를 수정했습니다. 운영체제와 Tk가 만든 팝업을 Python 위젯으로 변환하지 않고 입력을 잡고 있는 창을 확인합니다.
+- 스크롤바가 `3.0`·`0.025` 같은 **소수 단위 이동량**을 전달할 때 발생하던 `ValueError`를 수정했습니다. 소수 값을 픽셀 위치로 변환하며, 스크롤바 화살표·페이지 이동·직접 끌기도 유지합니다.
+- 설정의 글꼴·언어·테마·열기 동작 목록, 글자 크기 입력, 폴더 목록, 이름 변경창의 원래 파일명은 각 컨트롤의 기본 휠 동작을 사용합니다. 설정창에 전체 스크롤 영역을 새로 추가하지 않습니다.
+
+### 영역별 스크롤과 팝업 입력 분리
+
+- 부드러운 갤러리 휠 이동은 **썸네일 영역 안에서만** 처리합니다. 다른 목록이나 입력창 위에서 휠을 돌릴 때 뒤쪽 갤러리까지 함께 움직이지 않도록 했습니다.
+- 마우스가 썸네일 영역을 벗어나거나 포커스가 이동하면 남은 휠 애니메이션을 멈춥니다. 팝업·대화상자가 입력을 잡고 있는 동안에도 대기 중인 갤러리 이동을 중단합니다.
+- 썸네일 편집기는 **원본 이미지 영역 위의 휠만 확대·축소**합니다. 편집기의 드롭다운이나 다른 대화상자가 입력을 잡고 있을 때는 이미지 확대를 막고, 오른쪽 미리보기·상태 표시·버튼 위에서는 휠 확대를 실행하지 않습니다.
+- 갤러리·폴더 목록·스크롤바·드롭다운·설정·이름 변경창·편집기를 함께 점검하는 입력 회귀 검사를 추가했습니다. 기존의 부드러운 이동과 Windows 스크롤 잔상 방지 방식은 유지합니다.
+
+## 실행 안내
+
+다음은 **1.2.4 배포 파일**에 대한 안내입니다. Python은 포함되어 있어 별도 설치가 필요 없습니다.
+
+- **Windows 10/11 64비트:** Windows-x64 ZIP을 풀고 `FileManDaejanggyeong.exe`를 실행합니다.
+- **macOS 15 이상:** Apple Silicon(M1 이상)은 macOS-arm64, Intel은 macOS-x86_64 ZIP을 받습니다. 압축을 풀고 `File Tripitaka.app`을 응용 프로그램 폴더로 옮깁니다.
+- Windows EXE는 배포자 코드 서명이 없습니다. Mac 앱은 실행 무결성을 위한 임시 서명만 적용되어 있으며 Developer ID 서명·Apple 공증은 없습니다. 운영체제 정책에 따라 실행 경고나 차단이 나타날 수 있습니다.
+- `SHA256SUMS.txt`로 ZIP 무결성을 확인할 수 있습니다. 각 ZIP의 `THIRD-PARTY` 폴더에 Tcl/Tk와 포함 라이브러리의 라이선스·고지문이 들어 있습니다.
+
+**소스 테스트 ZIP은 배포 실행 파일과 다릅니다.** `File-Tripitaka-v1.2.4-Windows-Test.zip`을 사용하는 경우 전체를 새 폴더에 풀고 안의 `run-windows.bat`을 실행하세요. 이 묶음에는 Python이나 EXE가 없으며 **Windows용 Python 3.12 이상**이 필요합니다. 필요한 라이브러리는 배치 실행 시 설치합니다.
+
+## 지원 범위와 설정
+
+- ZIP·CBZ는 기본 지원하며 RAR·7Z 계열 미리보기에는 별도 **7-Zip(7zz/7z)** 설치가 필요합니다. 꿀뷰 등 외부 뷰어도 별도로 설치해야 합니다.
+- 암호·손상·분할·중첩 압축은 미리보기가 제한될 수 있습니다. 썸네일 편집은 원본을 수정하지 않지만, **이름 변경·휴지통 이동을 직접 실행하면 원본 파일에 적용**됩니다.
+- 기존 설정과 즐겨찾기는 Windows의 `%LOCALAPPDATA%\ArchiveShelf`, Mac의 `~/Library/Application Support/File Tripitaka`에서 유지합니다.
+- 대표 이미지 데이터는 압축 해제 후 64MB까지 처리합니다. 큰 이미지 디코더는 별도 프로세스에서 한 장씩 실행하며 RSS 512MB·45초 제한을 적용합니다.
+- 오류를 알려주실 때는 OS 버전, CPU 종류, 파일 형식과 재현 단계를 포함해 주세요. 실제 이미지·토큰·민감한 파일 경로는 공개 Issues에 올리지 마세요.
+
+## 이전 버전 · 1.2.3
 
 **2026-10-19 · 버전 1.2.3**
 
@@ -12,9 +60,9 @@ Windows에서 스크롤할 때 썸네일 조각이 가로로 잘리거나 겹쳐
 | macOS 15 이상 · Apple Silicon(M1 이상) | [macOS-arm64.zip](https://github.com/sin871220/File-Tripitaka/releases/download/v1.2.3/File-Tripitaka-v1.2.3-macOS-arm64.zip) |
 | macOS 15 이상 · Intel | [macOS-x86_64.zip](https://github.com/sin871220/File-Tripitaka/releases/download/v1.2.3/File-Tripitaka-v1.2.3-macOS-x86_64.zip) |
 
-## 1.2.3 업데이트 목록
+### 1.2.3 업데이트 목록
 
-### 스크롤 잔상 수정과 부드러운 이동
+#### 스크롤 잔상 수정과 부드러운 이동
 
 - Windows에서 스크롤할 때 이미지 조각이 가로줄처럼 겹쳐 남던 현상을 수정했습니다. 썸네일·파일명·정보·선택 테두리·즐겨찾기 별을 같은 화면에서 함께 그리도록 바꿨습니다. Windows 테스트본에서 잔상이 사라지고 부드럽게 움직인다는 사용자 확인을 받았습니다.
 - 휠 한 칸마다 즉시 크게 이동하던 동작을 **픽셀 단위 애니메이션**으로 바꿨습니다. 작은 휠 입력과 빠른 연속 입력, 방향 전환도 반영합니다.
@@ -23,32 +71,13 @@ Windows에서 스크롤할 때 썸네일 조각이 가로로 잘리거나 겹쳐
 - 기존 파일 선택, 탭별 스크롤 기억, 즐겨찾기 표시·해제, 썸네일 영역 편집과 해당 카드만 갱신하는 동작을 유지합니다.
 - 이미지 읽기 도중 편집기를 닫아도 화면 자원은 UI 스레드에서 정리하도록 보강했습니다. 앱을 닫은 뒤 남은 작업이 끝날 때까지 종료에 필요한 객체도 안전하게 유지합니다.
 
-### 썸네일 도구와 카드 표시 정리
+#### 썸네일 도구와 카드 표시 정리
 
 - **썸네일 크기·슬라이더·창에 맞춤·미리보기·썸네일 영역 편집**을 같은 줄 오른쪽에 한 묶음으로 배치했습니다. 왼쪽에는 **맨 위로** 버튼을 둡니다.
 - 넓은 창에서는 도구 사이에 큰 빈 공간이 생기지 않으며, 좁은 창에서는 크기 슬라이더가 줄어들어 같은 줄을 유지합니다.
 - 긴 파일명은 여러 줄로 표시하고 카드 높이를 넘으면 말줄임합니다. 전체 경로는 마우스를 올렸을 때 하단 상태 표시에서 확인할 수 있습니다.
 - 설정한 글꼴·글자 크기와 한글·일본어·한자 표시를 유지하며, 이미지와 글자가 옆 카드나 다음 행으로 넘치지 않도록 했습니다. 이미지 비율도 유지합니다.
 - 이번 화면 표시·스크롤 변경은 **원본 압축파일과 내부 이미지를 수정하지 않습니다.** 기존 썸네일 영역 편집 정보도 그대로 사용합니다.
-
-## 실행 안내
-
-다음은 **1.2.3 배포 파일**에 대한 안내입니다. Python은 포함되어 있어 별도 설치가 필요 없습니다.
-
-- **Windows 10/11 64비트:** Windows-x64 ZIP을 풀고 `FileManDaejanggyeong.exe`를 실행합니다.
-- **macOS 15 이상:** Apple Silicon(M1 이상)은 macOS-arm64, Intel은 macOS-x86_64 ZIP을 받습니다. 압축을 풀고 `File Tripitaka.app`을 응용 프로그램 폴더로 옮깁니다.
-- Windows EXE는 배포자 코드 서명이 없습니다. Mac 앱은 실행 무결성을 위한 임시 서명만 적용되어 있으며 Developer ID 서명·Apple 공증은 없습니다. 운영체제 정책에 따라 실행 경고나 차단이 나타날 수 있습니다.
-- `SHA256SUMS.txt`로 ZIP 무결성을 확인할 수 있습니다. 각 ZIP의 `THIRD-PARTY` 폴더에 Tcl/Tk와 포함 라이브러리의 라이선스·고지문이 들어 있습니다.
-
-**소스 테스트 ZIP은 배포 실행 파일과 다릅니다.** `File-Tripitaka-v1.2.3-Windows-Test.zip`을 사용하는 경우 전체를 새 폴더에 풀고 안의 `run-windows.bat`을 실행하세요. 이 묶음에는 Python이나 EXE가 없으며 **Windows용 Python 3.12 이상**이 필요합니다. 필요한 라이브러리는 배치 실행 시 설치합니다.
-
-## 지원 범위와 설정
-
-- ZIP·CBZ는 기본 지원하며 RAR·7Z 계열 미리보기에는 별도 **7-Zip(7zz/7z)** 설치가 필요합니다. 꿀뷰 등 외부 뷰어도 별도로 설치해야 합니다.
-- 암호·손상·분할·중첩 압축은 미리보기가 제한될 수 있습니다. 썸네일 편집은 원본을 수정하지 않지만, **이름 변경·휴지통 이동을 직접 실행하면 원본 파일에 적용**됩니다.
-- 기존 설정과 즐겨찾기는 Windows의 `%LOCALAPPDATA%\ArchiveShelf`, Mac의 `~/Library/Application Support/File Tripitaka`에서 유지합니다.
-- 대표 이미지 데이터는 압축 해제 후 64MB까지 처리합니다. 큰 이미지 디코더는 별도 프로세스에서 한 장씩 실행하며 RSS 512MB·45초 제한을 적용합니다.
-- 오류를 알려주실 때는 OS 버전, CPU 종류, 파일 형식과 재현 단계를 포함해 주세요. 실제 이미지·토큰·민감한 파일 경로는 공개 Issues에 올리지 마세요.
 
 ## 이전 버전 · 1.2.2
 
@@ -102,4 +131,4 @@ Windows에서 스크롤할 때 썸네일 조각이 가로로 잘리거나 겹쳐
 - 이름 변경창은 파일명 길이에 맞춰 너비를 자동 조정하고, 긴 이름의 줄바꿈·드래그 복사·수동 크기 조절을 지원합니다. 입력칸과 버튼을 가리던 Windows 창 크기 문제를 수정했습니다.
 - 폴더를 옮겨 실행할 수 있는 Windows 소스 테스트 ZIP과 실행 배치를 정리했습니다.
 
-Version 1.2.3 fixes overlapping thumbnail strips during Windows scrolling, adds smooth pixel-based wheel movement, and groups thumbnail controls on the right. Release packages support Windows x64, macOS Apple Silicon, and macOS Intel and include Python. Publisher code signing and Apple notarization are not included.
+Version 1.2.4 fixes wheel errors in native combobox popups and fractional scrollbar input, keeps scrolling local to each control, and stops pending gallery motion while popups or dialogs are active. Release packages support Windows x64, macOS Apple Silicon, and macOS Intel and include Python. Publisher code signing and Apple notarization are not included.

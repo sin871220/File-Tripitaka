@@ -494,10 +494,21 @@ class ThumbnailEditor(tk.Toplevel):
         self._render()
 
     def _wheel(self, event):
+        if self._closed.is_set():
+            return 'break'
+        grab = str(self.tk.call('grab', 'current', self._w))
+        if grab and grab != self._w:
+            return 'break'
         if self._image is not None and not self._busy:
-            direction = 1 if getattr(event, 'num', None) == 4 or getattr(event, 'delta', 0) > 0 else -1
+            number, delta = getattr(event, 'num', None), getattr(event, 'delta', 0)
+            if number == 4 or delta > 0:
+                direction = 1
+            elif number == 5 or delta < 0:
+                direction = -1
+            else:
+                return 'break'
             self._set_zoom(self._zoom * (1.15 ** direction), (event.x, event.y))
-        # The application's bind_all wheel handler must not move the gallery.
+        # Keep image zoom local to this editor's canvas.
         return 'break'
 
     def _canvas_configured(self, _event=None):
@@ -856,7 +867,7 @@ class ThumbnailEditor(tk.Toplevel):
         if not self._closed.is_set():
             self._shutdown()
             try:
-                if self.grab_current() is self:
+                if str(self.tk.call('grab', 'current', self._w)) == self._w:
                     self.grab_release()
             except tk.TclError:
                 pass

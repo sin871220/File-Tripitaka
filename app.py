@@ -253,9 +253,13 @@ class App(Preferences, tk.Tk):
         self.canvas.bind('<Button-1>', lambda e: self.canvas.focus_set())
         self.canvas.bind('<KeyPress>', self.gallery_keypress)
         self.canvas.bind('<Configure>', self.resize)
-        self.canvas.bind_all('<MouseWheel>', self.wheel)
-        self.canvas.bind_all('<Button-4>', self.wheel)
-        self.canvas.bind_all('<Button-5>', self.wheel)
+        # Cards are drawn on this canvas, so wheel events do not need an
+        # application-wide binding that also receives native combo popdowns.
+        self.canvas.bind('<MouseWheel>', self.wheel)
+        self.canvas.bind('<Button-4>', self.wheel)
+        self.canvas.bind('<Button-5>', self.wheel)
+        self.canvas.bind('<Leave>', lambda _event: self.smooth_scroll.stop())
+        self.canvas.bind('<FocusOut>', lambda _event: self.smooth_scroll.stop())
         self.status = tk.StringVar(value='폴더를 선택해 주세요. ZIP은 바로, RAR·7Z는 7-Zip 설치 후 미리볼 수 있습니다.')
         ttk.Label(self, textvariable=self.status, padding=10).pack(fill='x')
         self.bind('<Map>', lambda event: self.apply_titlebar_theme() if event.widget is self else None, add='+')
@@ -1324,10 +1328,15 @@ class App(Preferences, tk.Tk):
 
     def scroll_view(self, *args):
         self.smooth_scroll.stop()
-        # Keep scrollbar arrows useful now that the canvas uses single pixels.
-        if len(args) == 3 and args[0] == 'scroll' and args[2] == 'units':
-            args = ('scroll', int(args[1]) * 30, 'units')
-        self.canvas.yview(*args)
+        if len(args) == 3 and args[0] == 'scroll':
+            # Tk 9 scrollbar wheels pass fractional amounts, including '3.0'
+            # and '0.025'. Canvas.yview scroll accepts only integer counts.
+            # Preserve arrows' 30-pixel steps and pages' 90% viewport steps.
+            step = 30 if args[2] == 'units' else self.canvas.winfo_height() * 0.9
+            top = self.canvas.canvasy(0) + float(args[1]) * step
+            self.canvas.yview_moveto(top / max(1, self.scroll_height()))
+        else:
+            self.canvas.yview(*args)
         self.schedule_refresh()
 
     def scroll_height(self):
@@ -1338,6 +1347,9 @@ class App(Preferences, tk.Tk):
         return max(0, self.scroll_height() - self.canvas.winfo_height())
 
     def move_scroll_pixel(self, top):
+        if self.closing or self.tk.call('grab', 'current', self._w):
+            self.smooth_scroll.stop()
+            return
         self.canvas.yview_moveto(top / max(1, self.scroll_height()))
         self.schedule_refresh()
 
@@ -1346,11 +1358,11 @@ class App(Preferences, tk.Tk):
         self.schedule_refresh()
 
     def wheel(self, event):
-        if self.grab_current() is not None:
+        if self.closing or getattr(event, 'widget', None) is not self.canvas:
             return
-        if event.widget.winfo_toplevel() != self:
-            return
-        if event.widget == self.tree or event.widget == self.favorite_list:
+        # Tcl creates popup windows without corresponding Python widgets.
+        # grab_current() tries to resolve those paths and raises KeyError.
+        if self.tk.call('grab', 'current', self._w):
             return
         pixels = wheel_pixels(getattr(event, 'delta', 0), getattr(event, 'num', None), sys.platform)
         if pixels:

@@ -285,8 +285,8 @@ class ThumbnailEditorSmoke(unittest.TestCase):
         editor = self.open_editor(path)
         original_top = app.canvas.canvasy(0)
         self.assertIs(app.grab_current(), editor)
-        # Preview/footer events bubble to the application's global bindings;
-        # synthetic main-canvas events also exercise retargeting under a grab.
+        # Other editor regions must not move the gallery; synthetic main-canvas
+        # events also exercise retargeting while a modal window owns the grab.
         for widget in (editor.preview_canvas, editor.status_label,
                        editor.apply_button, app.canvas):
             for sequence, options in (('<MouseWheel>', {'delta': -120}),
@@ -300,7 +300,7 @@ class ThumbnailEditorSmoke(unittest.TestCase):
                         # Some native Tk ports reject Linux button numbers.
                         # Verify their registered app dispatch path directly.
                         self.assertIn('button', str(error).lower())
-                        self.assertTrue(app.bind_all(sequence))
+                        self.assertTrue(app.canvas.bind(sequence))
                         app.wheel(SimpleNamespace(widget=widget, num=int(sequence[-2]), delta=0))
                     app.update()
                     self.assertAlmostEqual(app.canvas.canvasy(0), original_top, delta=1)
