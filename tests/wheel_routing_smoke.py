@@ -119,9 +119,10 @@ class WheelRoutingSmoke(unittest.TestCase):
     def popup(self, combo):
         """Create Tk's real Tcl-owned popup without blocking Aqua's menu loop.
 
-        Windows/X11 execute the real Post implementation and listbox wheel
-        binding. Aqua's Post enters a native tracking loop; construct its real
-        PopdownWindow/menu instead, then use the same Tcl-only popup grab.
+        Tk 8.6 uses a listbox on Aqua as well as Windows/X11; its real Post is
+        nonblocking. Tk 9 Aqua instead uses a native menu tracking loop, so
+        construct that real menu without posting it. Inspect the actual popup
+        children rather than assuming an implementation from the OS/version.
         Python has no widget object for either implementation's popup.
         """
         app = self.app
@@ -130,18 +131,25 @@ class WheelRoutingSmoke(unittest.TestCase):
         kind = str(tk.call('tk', 'windowingsystem'))
         combo.winfo_toplevel().focus_force()
         app.update()
-        if kind == 'aqua':
-            pop = str(tk.call('ttk::combobox::PopdownWindow', combo._w))
+        pop = str(tk.call('ttk::combobox::PopdownWindow', combo._w))
+        if tk.getboolean(tk.call('winfo', 'exists', pop + '.f.l')):
+            self.assertEqual(str(tk.call('winfo', 'class', pop + '.f.l')), 'Listbox')
+            tk.call('ttk::combobox::Post', combo._w)
+            target = pop + '.f.l'
+        elif kind == 'aqua' and tk.getboolean(tk.call('winfo', 'exists', pop + '.menu')):
+            self.assertTrue(tk.call('info', 'commands', 'ttk::combobox::ConfigureAquaMenu'))
             tk.call('ttk::combobox::ConfigureAquaMenu', combo._w, max(100, combo.winfo_width()))
             tk.call('wm', 'geometry', pop, '180x100+20+20')
             tk.call('wm', 'deiconify', pop)
             target = pop + '.menu'
         else:
-            tk.call('ttk::combobox::Post', combo._w)
-            pop = combo._w + '.popdown'
-            target = pop + '.f.l'
-        app.update_idletasks()
+            self.fail(f'Unsupported combobox popup structure: {kind} {pop}')
+        # Map/focus callbacks may complete the real listbox geometry and reveal
+        # its selected item. Drain those before measuring its scroll range.
+        app.update()
         tk.call('grab', 'set', pop)
+        app.update()
+        self.assertTrue(tk.getboolean(tk.call('winfo', 'viewable', pop)), pop)
         self.assertEqual(str(tk.call('grab', 'current', app._w)), pop)
         # This is the exact former failure: Tkinter cannot resolve a popup
         # created by Tcl rather than a Python BaseWidget constructor.
@@ -311,16 +319,42 @@ class WheelRoutingSmoke(unittest.TestCase):
                 app.update()
                 with self.popup(combo) as (_pop, target):
                     is_list = str(app.tk.call('winfo', 'class', target)) == 'Listbox'
-                    long_list = is_list and int(app.tk.call(target, 'size')) > 30
-                    if long_list:
+                    if is_list:
                         # The selected font may start at the end of the list;
                         # wheel downward from a known position with room below.
                         app.tk.call(target, 'yview', 'moveto', 0)
-                    first = app.tk.splitlist(app.tk.call(target, 'yview')) if long_list else ()
-                    self.wheel(target)
-                    if long_list:
+                        app.update_idletasks()
+                    first = app.tk.splitlist(app.tk.call(target, 'yview')) if is_list else ()
+                    overflow = is_list and float(first[1]) - float(first[0]) < 1 - 1e-9
+                    # A coarse wheel tick also works with Tk 8.6 Aqua's pixel
+                    # accumulator; no platform-specific tiny delta is required.
+                    self.wheel(target, delta=-120)
+                    if overflow:
                         after = app.tk.splitlist(app.tk.call(target, 'yview'))
-                        self.assertGreater(float(after[0]), float(first[0]))
+                        wheel_lines = None
+                        if sys.platform == 'win32':
+                            import ctypes
+                            lines = ctypes.c_uint()
+                            if ctypes.windll.user32.SystemParametersInfoW(0x0068, 0, ctypes.byref(lines), 0):
+                                wheel_lines = lines.value
+                        if wheel_lines != 0:
+                            details = (f'popup={target}, before={first}, after={after}, '
+                                       f'height={app.tk.call("winfo", "height", target)}, '
+                                       f'reqheight={app.tk.call("winfo", "reqheight", target)}, '
+                                       f'rows={app.tk.call(target, "cget", "-height")}, '
+                                       f'items={app.tk.call(target, "size")}, '
+                                       f'bindtags={app.tk.call("bindtags", target)}, '
+                                       f'focus={app.tk.call("focus")}, '
+                                       f'grab={app.tk.call("grab", "current", app._w)}, '
+                                       f'wheel lines={wheel_lines}')
+                            self.assertGreater(float(after[0]), float(first[0]),
+                                               'Native popup wheel did not move: ' + details)
+                        # System wheel scrolling may be disabled. The real
+                        # overflowing list must still support its own scrollbar.
+                        app.tk.call(target, 'yview', 'moveto', 0)
+                        app.tk.call(target, 'yview', 'scroll', 1, 'units')
+                        direct = app.tk.splitlist(app.tk.call(target, 'yview'))
+                        self.assertGreater(float(direct[0]), 0)
                     self.assertIsNone(self.gallery_wheel())
             dialog.settings_capture_shortcut(next(iter(dialog.shortcut_buttons)), 0)
             app.update()
@@ -408,4 +442,11 @@ class WheelRoutingSmoke(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    unittest.main(verbosity=2)
+    try:
+        unittest.main(verbosity=2)
+    finally:
+        # Windows cannot remove an open crash log from the temporary fixture.
+        module.faulthandler.disable()
+        module.FAULT_LOG.close()
+        module.logging.shutdown()
+        _settings.cleanup()
