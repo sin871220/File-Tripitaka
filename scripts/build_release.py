@@ -295,6 +295,8 @@ def main():
         run([sys.executable, ROOT / 'tests' / 'file_actions_smoke.py'], timeout=300)
         run([sys.executable, ROOT / 'tests' / 'shortcuts_smoke.py'], timeout=300)
         run([sys.executable, ROOT / 'tests' / 'thumbnail_editor_smoke.py'], timeout=300)
+        run([sys.executable, ROOT / 'tests' / 'scroll_smoke.py'], timeout=300)
+        run([sys.executable, ROOT / 'tests' / 'gallery_card_smoke.py'], timeout=300)
     artifact, binary = freeze(target, arch, version, executable, work)
     frozen_check(binary, target)
     package_release(artifact, target, arch, version, work, args.output_dir.resolve())

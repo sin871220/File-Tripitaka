@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/sin871220/File-Tripitaka/releases/tag/v1.2.2"><strong>1.2.2 다운로드</strong></a>
+  <a href="https://github.com/sin871220/File-Tripitaka/releases/tag/v1.2.3"><strong>1.2.3 다운로드</strong></a>
   &nbsp;·&nbsp;
   <a href="#처음-사용하기">사용 방법</a>
   &nbsp;·&nbsp;
@@ -27,17 +27,17 @@
 
 ## 다운로드
 
-**현재 버전은 1.2.2입니다.** 원하는 이미지와 영역을 골라 저장하는 썸네일 편집기를 추가했습니다. [1.2.2 업데이트 내역](BETA-RELEASE.md#122-업데이트-목록)을 확인하세요.
+**현재 버전은 1.2.3입니다.** Windows에서 스크롤할 때 썸네일 조각이 가로로 겹쳐 남던 문제를 수정하고, 휠 이동을 부드럽게 개선했습니다. 썸네일 크기·창에 맞춤·미리보기·편집 버튼도 오른쪽에 모았습니다. [1.2.3 업데이트 내역](BETA-RELEASE.md#123-업데이트-목록)을 확인하세요.
 
-[v1.2.2 다운로드 페이지](https://github.com/sin871220/File-Tripitaka/releases/tag/v1.2.2)에서 내 컴퓨터에 맞는 ZIP을 받으세요. Python을 따로 설치할 필요가 없습니다.
+[v1.2.3 다운로드 페이지](https://github.com/sin871220/File-Tripitaka/releases/tag/v1.2.3)에서 내 컴퓨터에 맞는 ZIP을 받으세요. Python을 따로 설치할 필요가 없습니다.
 
 각 ZIP의 `THIRD-PARTY` 폴더에 Tcl/Tk와 포함 라이브러리의 라이선스·고지문이 들어 있습니다. `SHA256SUMS.txt`로 다운로드한 파일의 무결성을 확인할 수 있습니다.
 
 | 내 컴퓨터 | 받을 파일 | 실행 방법 |
 |---|---|---|
-| Windows 10/11 · 64비트 | [Windows-x64.zip](https://github.com/sin871220/File-Tripitaka/releases/download/v1.2.2/File-Tripitaka-v1.2.2-Windows-x64.zip) | 압축을 풀고 `FileManDaejanggyeong.exe` 실행 |
-| Mac · Apple Silicon(M1 이상) | [macOS-arm64.zip](https://github.com/sin871220/File-Tripitaka/releases/download/v1.2.2/File-Tripitaka-v1.2.2-macOS-arm64.zip) | 압축을 풀고 `File Tripitaka.app`을 응용 프로그램 폴더로 이동 |
-| Mac · Intel | [macOS-x86_64.zip](https://github.com/sin871220/File-Tripitaka/releases/download/v1.2.2/File-Tripitaka-v1.2.2-macOS-x86_64.zip) | 압축을 풀고 `File Tripitaka.app`을 응용 프로그램 폴더로 이동 |
+| Windows 10/11 · 64비트 | [Windows-x64.zip](https://github.com/sin871220/File-Tripitaka/releases/download/v1.2.3/File-Tripitaka-v1.2.3-Windows-x64.zip) | 압축을 풀고 `FileManDaejanggyeong.exe` 실행 |
+| Mac · Apple Silicon(M1 이상) | [macOS-arm64.zip](https://github.com/sin871220/File-Tripitaka/releases/download/v1.2.3/File-Tripitaka-v1.2.3-macOS-arm64.zip) | 압축을 풀고 `File Tripitaka.app`을 응용 프로그램 폴더로 이동 |
+| Mac · Intel | [macOS-x86_64.zip](https://github.com/sin871220/File-Tripitaka/releases/download/v1.2.3/File-Tripitaka-v1.2.3-macOS-x86_64.zip) | 압축을 풀고 `File Tripitaka.app`을 응용 프로그램 폴더로 이동 |
 
 Mac 버전은 **macOS 15 이상**을 지원합니다. Mac의 칩 종류는  → **이 Mac에 관하여**에서 확인할 수 있습니다.
 
@@ -52,7 +52,7 @@ Mac 버전은 **macOS 15 이상**을 지원합니다. Mac의 칩 종류는  �
 | **썸네일 영역 편집** | 압축파일 안의 이미지와 표시할 영역을 직접 골라 저장합니다. 1장·2장·3장 보기의 각 위치를 따로 편집할 수 있습니다. |
 | **파일별 즐겨찾기** | 폴더가 달라도 즐겨찾기 탭에서 한꺼번에 확인합니다. 전체 탭에서는 오른쪽 위 노란 별로 구분합니다. |
 | **파일 정리** | 우클릭 메뉴와 F2로 이름을 바꾸고, Delete로 확인 후 휴지통에 보냅니다. 이름을 바꿔도 즐겨찾기를 유지합니다. |
-| **끊김을 줄인 탐색** | 페이지를 넘기지 않고 계속 스크롤합니다. 화면 근처의 카드만 생성하며, 탭마다 스크롤 위치를 기억합니다. |
+| **끊김을 줄인 탐색** | 휠 입력에 맞춰 부드럽게 스크롤합니다. 화면 근처의 카드만 표시하며, 탭마다 스크롤 위치를 기억합니다. |
 | **내 화면에 맞게** | 사이드바 접기, 창 너비 맞춤, 네 가지 테마와 글꼴·글자 크기, 카드 표시 항목을 설정합니다. |
 
 ## 처음 사용하기
@@ -179,7 +179,7 @@ Windows 소스 실행은 **새 버전 ZIP을 새 폴더에 전부 푼 뒤 그 �
 
 공유폴더를 통해 다른 Windows 컴퓨터로 옮겨 테스트할 때는 `python scripts/package_windows_test.py`로 **Windows-Test.zip 하나**를 만들 수 있습니다. 코드·아이콘·글꼴과 실행 배치가 한 버전 폴더에 들어가며, Git 미추적 신규 모듈도 포함합니다. ZIP 전체를 옮겨 새 폴더에 푼 뒤 그 안의 배치를 실행하세요. 이 테스트 ZIP에는 Python이나 EXE가 포함되지 않습니다.
 
-**배포 ZIP과 소스 테스트 ZIP은 다릅니다.** GitHub Releases의 `Windows-x64`·`macOS-arm64`·`macOS-x86_64` 패키지는 Python을 포함합니다. `python scripts/package_windows_test.py`로 만드는 `File-Tripitaka-v1.2.2-Windows-Test.zip`은 소스 실행용이므로 Windows용 Python 3.12 이상을 따로 설치해야 합니다.
+**배포 ZIP과 소스 테스트 ZIP은 다릅니다.** GitHub Releases의 `Windows-x64`·`macOS-arm64`·`macOS-x86_64` 패키지는 Python을 포함합니다. `python scripts/package_windows_test.py`로 만드는 현재 소스 테스트 `File-Tripitaka-v1.2.3-Windows-Test.zip`은 소스 실행용이므로 Windows용 Python 3.12 이상을 따로 설치해야 합니다.
 
 - Windows: 소스 실행은 `run-windows.bat`, 배포 빌드는 `build-windows.bat`.
 - macOS: `build-macos.sh`. Apple Silicon과 Intel은 해당 CPU용 Python 환경에서 각각 빌드합니다.
@@ -192,6 +192,8 @@ python tests/language_smoke.py
 python tests/file_actions_smoke.py
 python tests/shortcuts_smoke.py
 python tests/thumbnail_editor_smoke.py
+python tests/scroll_smoke.py
+python tests/gallery_card_smoke.py
 ```
 
 패키징된 앱은 `--self-test --report <JSON 경로>`로 ZIP 처리·네이티브 디코더·Tk GUI·언어 전환을 점검할 수 있습니다. 자동 점검이 모든 기기에서의 실사용 검증을 대신하지는 않습니다.

@@ -367,7 +367,8 @@ class ThumbnailEditorSmoke(unittest.TestCase):
                               'Edited card waited behind the normal thumbnail backlog', timeout=3)
                 self.assertIs(app.photos.get(label), original_photo,
                               'Keep the existing image until the edited replacement is ready')
-                self.assertTrue(label.cget('image'))
+                self.assertIs(label.photo, original_photo)
+                self.assertTrue(label.exists())
                 render_release.set()
                 self.wait_for(lambda: not editor._busy and label in app.photos
                               and app.photos[label] is not original_photo,
@@ -591,23 +592,35 @@ class ThumbnailEditorSmoke(unittest.TestCase):
     def test_main_toolbar_fits_same_row_in_both_languages_and_window_widths(self):
         app = self.app
         button = app.thumbnail_edit_button
-        tools = button.master
+        cluster = app.thumbnail_controls
+        tools = cluster.master
+        self.assertIs(button.master, cluster)
+        self.assertIs(app.thumbnail_scale.master, cluster)
+        self.assertIs(app.fit_button.master, cluster)
+        self.assertIs(app.sampling_control.master, cluster)
+        top_buttons = [widget for widget in tools.winfo_children()
+                       if isinstance(widget, module.ttk.Button)]
+        self.assertEqual(len(top_buttons), 1, 'Only Top belongs outside the right-hand cluster')
+        top_button = top_buttons[0]
         for language in ('ko', 'en'):
             app.settings['language'] = language
             app.apply_language()
-            for width in (1120, 980):
+            for width in (980, 1120, 1600):
                 for sidebar in (True, False):
                     with self.subTest(language=language, width=width, sidebar=sidebar):
                         if app.sidebar_hidden == sidebar:
                             app.toggle_sidebar()
                         app.geometry(f'{width}x760')
                         app.update()
-                        controls = [widget for widget in tools.winfo_children()
+                        controls = [widget for widget in cluster.winfo_children()
                                     if isinstance(widget, (module.ttk.Button, module.ttk.Checkbutton,
                                                            module.ttk.Combobox, module.ttk.Scale,
                                                            module.ttk.Label))]
+                        controls.sort(key=lambda widget: int(widget.grid_info()['column']))
+                        self.assertEqual(len(controls), 7)
+                        self.assertEqual(controls[0].cget('text'), module.tr('썸네일 크기'))
                         center = button.winfo_rooty() + button.winfo_height() / 2
-                        left, right = tools.winfo_rootx(), tools.winfo_rootx() + tools.winfo_width()
+                        left, right = cluster.winfo_rootx(), cluster.winfo_rootx() + cluster.winfo_width()
                         issues = []
                         for widget in controls:
                             text = widget.cget('text') if 'text' in widget.keys() else str(widget)
@@ -616,19 +629,35 @@ class ThumbnailEditorSmoke(unittest.TestCase):
                             if (widget.winfo_rootx() < left or
                                     widget.winfo_rootx() + widget.winfo_width() > right):
                                 issues.append(f'{text} outside row: x={widget.winfo_rootx() - left}, '
-                                              f'width={widget.winfo_width()}, row={tools.winfo_width()}')
+                                              f'width={widget.winfo_width()}, row={cluster.winfo_width()}')
                             if not isinstance(widget, module.ttk.Scale) and widget.winfo_width() < widget.winfo_reqwidth():
                                 issues.append(f'{text} clipped: {widget.winfo_width()} < {widget.winfo_reqwidth()}')
                             if abs(widget.winfo_rooty() + widget.winfo_height() / 2 - center) > 2:
                                 issues.append(f'{text} occupies a different vertical row')
+                        for previous, following in zip(controls, controls[1:]):
+                            gap = following.winfo_rootx() - previous.winfo_rootx() - previous.winfo_width()
+                            if not 0 <= gap <= 12:
+                                issues.append(f'Internal cluster gap is {gap}px between '
+                                              f'{previous.winfo_name()} and {following.winfo_name()}')
+                        right_margin = tools.winfo_rootx() + tools.winfo_width() - right
+                        if not 0 <= right_margin <= 10:
+                            issues.append(f'Controls are not right aligned: margin={right_margin}')
+                        top_gap = left - top_button.winfo_rootx() - top_button.winfo_width()
+                        if top_gap < 0 or width == 1600 and top_gap < 100:
+                            issues.append(f'Extra width must separate Top from the whole cluster: gap={top_gap}')
+                        if abs(top_button.winfo_rooty() + top_button.winfo_height() / 2 - center) > 2:
+                            issues.append('Top and the thumbnail cluster occupy different rows')
                         if app.thumbnail_scale.winfo_width() < 32:
                             issues.append(f'Slider collapsed to {app.thumbnail_scale.winfo_width()} pixels')
+                        if app.thumbnail_scale.winfo_width() > 140:
+                            issues.append('Slider stretched inside the right-hand cluster')
                         if (button.winfo_rootx() + button.winfo_width()
                                 > app.winfo_rootx() + app.winfo_width()):
                             issues.append('Edit button extends beyond the main window')
                         self.assertFalse(issues, '; '.join(issues) +
-                                         f' (row={tools.winfo_width()}, requested={tools.winfo_reqwidth()}, '
-                                         f'fixed={tools.winfo_reqwidth() - app.thumbnail_scale.winfo_reqwidth()}, '
+                                         f' (row={tools.winfo_width()}, cluster={cluster.winfo_width()}, '
+                                         f'requested={cluster.winfo_reqwidth()}, '
+                                         f'fixed={cluster.winfo_reqwidth() - app.thumbnail_scale.winfo_reqwidth()}, '
                                          f'slider={app.thumbnail_scale.winfo_width()})')
 
     def test_two_and_three_slots_save_independently_and_keep_reverse_order(self):

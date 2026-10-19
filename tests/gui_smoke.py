@@ -17,6 +17,19 @@ errors = []
 app.report_callback_exception = lambda *args: errors.append(str(args))
 app.update()
 assert app.title() == module.APP_TITLE
+
+def assert_canvas_cards():
+    # The gallery must paint through one Canvas surface. Native child windows
+    # have a separate Windows repaint path and can leave strips while moving.
+    assert app.canvas.winfo_children() == []
+    assert all(app.canvas.type(item) in ('rectangle', 'image', 'text')
+               for item in app.canvas.find_all())
+    for _, card, thumbnail, background in app.cards.values():
+        assert card.alive and thumbnail.exists()
+        assert app.canvas.type(background) == 'rectangle'
+        assert app.canvas.type(card.title_item) == 'text'
+        assert app.canvas.type(card.info_item) == 'text'
+
 with tempfile.TemporaryDirectory() as tmp:
     root = Path(tmp).resolve()
     (root / 'child').mkdir()
@@ -43,10 +56,12 @@ with tempfile.TemporaryDirectory() as tmp:
     app.update_idletasks()
     app.refresh_visible()
     assert 0 < len(app.cards) < 80
-    for index, (_, frame, _, window) in app.cards.items():
-        assert app.canvas.coords(window) == [(index % app.columns()) * app.cell_width(), (index // app.columns()) * app.row_height()]
-        assert int(app.canvas.itemcget(window, 'width')) == app.cell_width() + 1
-        assert int(app.canvas.itemcget(window, 'height')) == app.row_height() + 1
+    assert_canvas_cards()
+    for index, (_, card, _, background) in app.cards.items():
+        x = (index % app.columns()) * app.cell_width()
+        y = (index // app.columns()) * app.row_height()
+        assert card.geometry == (x, y, app.cell_width() + 1, app.row_height() + 1)
+        assert app.canvas.coords(background) == [x, y, x + app.cell_width(), y + app.row_height()]
     gallery_width = app.canvas.winfo_width()
     app.toggle_sidebar()
     app.update()
@@ -138,8 +153,9 @@ with tempfile.TemporaryDirectory() as tmp:
     assert app.columns() * app.cell_width() <= app.canvas.winfo_width()
     assert app.canvas.winfo_width() - app.columns() * app.cell_width() < app.columns()
     last_column = next(card for index, card in app.cards.items() if index % app.columns() == app.columns() - 1)
-    window = last_column[3]
-    assert app.canvas.coords(window)[0] + int(app.canvas.itemcget(window, 'width')) == app.canvas.winfo_width() + 1
+    fitted_card = last_column[1]
+    assert fitted_card.geometry[0] + fitted_card.geometry[2] == app.canvas.winfo_width() + 1
+    assert app.canvas.coords(last_column[3])[2] == app.canvas.winfo_width()
     for desired_columns in (4, 5):
         app.thumb_size.set((app.canvas.winfo_width() // desired_columns - 35))
         app.size_changed()
@@ -154,8 +170,9 @@ with tempfile.TemporaryDirectory() as tmp:
         app.fit_thumbnails()
         assert app.columns() == desired_columns
         last_index = next(index for index in app.cards if index % desired_columns == desired_columns - 1)
-        fitted_window = app.cards[last_index][3]
-        assert app.canvas.coords(fitted_window)[0] + int(app.canvas.itemcget(fitted_window, 'width')) == app.canvas.winfo_width() + 1
+        fitted_card = app.cards[last_index][1]
+        assert fitted_card.geometry[0] + fitted_card.geometry[2] == app.canvas.winfo_width() + 1
+        assert app.canvas.coords(app.cards[last_index][3])[2] == app.canvas.winfo_width()
         app.geometry('1120x760')
         app.update()
         app.fit_thumbnails()
@@ -203,15 +220,19 @@ with tempfile.TemporaryDirectory() as tmp:
     assert app.pending == before_pending
     app.toggle_favorite(files[-1])
     assert app.cards == before_cards
-    assert not any(w.cget('text') == '★' for w in app.cards[7443][1].winfo_children())
+    assert not app.cards[7443][1].favorite
+    assert app.canvas.itemcget(app.cards[7443][1].badge_item, 'state') == 'hidden'
     app.toggle_favorite(files[-1])
     app.refresh_visible()
     card = next(card for card in app.cards.values() if card[0] == files[-1])
-    stars = [w for w in card[1].winfo_children() if w.cget('text') == '★']
-    assert len(stars) == 1
-    assert stars[0].cget('fg') == '#FFD21F'
-    assert stars[0].place_info()['anchor'] == 'ne'
-    assert all(not str(w.cget('text')).startswith('★ ') for w in card[1].winfo_children())
+    assert card[1].favorite
+    badge = card[1].badge_item
+    assert app.canvas.itemcget(badge, 'text') == '★'
+    assert app.canvas.itemcget(badge, 'state') == 'normal'
+    assert app.canvas.itemcget(badge, 'fill') == '#FFD21F'
+    assert app.canvas.itemcget(badge, 'anchor') == 'ne'
+    assert not card[1].name.startswith('★ ')
+    assert not app.canvas.itemcget(card[1].title_item, 'text').startswith('★ ')
     app.only_favorites.set(True)
     app.apply_search()
     assert app.filtered == [files[-1]]
@@ -277,7 +298,8 @@ with tempfile.TemporaryDirectory() as tmp:
     assert app.active_tab == 'favorites'
     assert 1000 < len(app.filtered) < 2000
     assert outside in app.filtered
-    assert all(w.cget('text') != '★' for _, frame, _, _ in app.cards.values() for w in frame.winfo_children())
+    assert all(not card.favorite and app.canvas.itemcget(card.badge_item, 'state') == 'hidden'
+               for _, card, _, _ in app.cards.values())
     app.toggle_favorite(outside)
     assert outside not in app.filtered
     app.toggle_favorite(outside)
@@ -298,7 +320,7 @@ with tempfile.TemporaryDirectory() as tmp:
     app.activate_selection('enter')
     assert app.selected_path == expected_next
     assert removed not in app.filtered
-    assert not removed_frame.winfo_exists()
+    assert not removed_frame.alive
     assert app.canvas.canvasy(0) == top_before
     assert app.generation == generation_before
     after = {card[0]: card for card in app.cards.values()}
@@ -328,10 +350,19 @@ with tempfile.TemporaryDirectory() as tmp:
     app.commit_preferences('라이트', default_action(), '', '', app.recursive.get(), hidden)
     assert app.cards == display_before and app.canvas.yview() == display_scroll
     assert app.generation == display_generation
-    assert all(not frame.title_label.winfo_manager() and not frame.info_label.winfo_manager() for _, frame, _, _ in app.cards.values())
+    assert all(app.canvas.itemcget(card.title_item, 'state') == 'hidden'
+               and app.canvas.itemcget(card.info_item, 'state') == 'hidden'
+               for _, card, _, _ in app.cards.values())
     mixed = dict(show_filename=True, show_extension=False, show_size=True, show_date=False)
     app.commit_preferences('라이트', default_action(), '', '', app.recursive.get(), mixed)
-    assert all(frame.title_label.cget('text') == path.stem and 'MB' in frame.info_label.cget('text') and '·' not in frame.info_label.cget('text') for path, frame, _, _ in app.cards.values())
+    assert all(card.name == path.stem and 'MB' in card.details and '·' not in card.details
+               and app.canvas.itemcget(card.title_item, 'text') == path.stem
+               and 'MB' in app.canvas.itemcget(card.info_item, 'text')
+               and '·' not in app.canvas.itemcget(card.info_item, 'text')
+               and app.canvas.itemcget(card.title_item, 'state') == 'normal'
+               and app.canvas.itemcget(card.info_item, 'state') == 'normal'
+               for path, card, _, _ in app.cards.values())
+    assert_canvas_cards()
     app.commit_preferences('라이트', default_action(), '', '', app.recursive.get(), dict.fromkeys(hidden, True))
     font_generation = app.generation
     font_cards = {card[0]: card for card in app.cards.values()}

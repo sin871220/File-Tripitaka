@@ -133,6 +133,8 @@ class Preferences:
             for child in widget.winfo_children():
                 tint(child)
         tint(self)
+        for _, card, _, _ in getattr(self, 'cards', {}).values():
+            card.set_theme(p, (self.ui_font, self.font_size))
         if hasattr(self, 'apply_titlebar_theme'):
             self.after_idle(self.apply_titlebar_theme)
 

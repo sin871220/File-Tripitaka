@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 REQUIRED = ('app.py', 'brand.py', 'archive_core.py', 'preferences.py', 'localization.py',
             'viewer.py', 'windows_shell.py', 'file_operations.py', 'shortcuts.py',
             'runtime_check.py', 'thumbnail_worker.py', 'large_thumbnail.py',
-            'thumbnail_editor.py', 'thumbnail_edits.py',
+            'thumbnail_editor.py', 'thumbnail_edits.py', 'smooth_scroll.py', 'gallery_card.py',
             'desktop_shortcuts.py', 'tree_icons.py', 'ui_fonts.py', 'dialog_geometry.py',
             'run-windows.bat', 'requirements.txt', 'assets/app.ico', 'assets/app.png',
             'fonts/NotoSansCJKkr-Regular.otf', 'fonts/OFL.txt', 'fonts/SOURCE.txt')
@@ -59,9 +59,16 @@ def package(root=ROOT, output=None):
 3. 압축을 푼 폴더 안의 run-windows.bat을 실행하세요.
 4. 제목 표시줄의 v{version}을 확인하세요.
 
+스크롤 개선
+- 썸네일·글자·테두리·즐겨찾기 별을 같은 Canvas에 직접 그립니다. 스크롤 중 각 썸네일 칸을 별도 창으로 이동시키지 않도록 바꿔, 이미지 조각이 가로로 겹쳐 남는 현상에 대응했습니다.
+- 휠 이동을 픽셀 단위 애니메이션으로 표시합니다. 빠르게 돌리면 이동량이 누적되고 반대로 돌리면 바로 방향을 바꿉니다.
+- 스크롤 중에는 기존 카드의 위치와 크기를 불필요하게 다시 설정하지 않습니다.
+- 스크롤바·방향키·탭 전환 등 다른 탐색 동작을 사용하면 남은 휠 애니메이션을 멈춥니다.
+
 썸네일 편집기
 - 편집기는 자유 비율로 시작합니다. '썸네일 비율 (127:180)'을 선택하면 1270×1800 비율로 고정합니다.
-- 파일을 선택한 뒤 썸네일 크기·창에 맞춤·미리보기와 같은 줄 오른쪽의 '썸네일 영역 편집' 버튼으로도 열 수 있습니다.
+- 썸네일 크기·슬라이더·창에 맞춤·미리보기·편집 버튼을 같은 줄 오른쪽에 한 묶음으로 배치했습니다.
+- 파일을 선택한 뒤 오른쪽 묶음의 '썸네일 영역 편집' 버튼으로도 열 수 있습니다.
 - Windows에서 정상 파일을 변경된 파일로 오인해 저장하지 못하던 문제를 수정했습니다.
 - 적용·복원한 썸네일은 일반 탐색용 작업 대기열과 별도로 갱신합니다.
 - 파일을 오른쪽 클릭하고 '썸네일 영역 편집'을 여세요.

@@ -55,7 +55,12 @@ with tempfile.TemporaryDirectory() as tmp:
     assert 'File information' in labels and 'Copy path' in labels
     assert app.selected_path == files[0]
     assert app.cards == cards_before
-    assert any(card[1].title_label.cget('text') == '설정.zip' for card in app.cards.values())
+    assert any(card[1].name == '설정.zip'
+               and app.canvas.itemcget(card[1].title_item, 'text') == '설정.zip'
+               for card in app.cards.values())
+    assert app.canvas.winfo_children() == []
+    assert all(app.canvas.type(item) in ('rectangle', 'image', 'text')
+               for item in app.canvas.find_all())
     assert translate('미리보기 불가\n압축파일에 지원하는 이미지가 없습니다.') == 'Preview unavailable\nNo supported images in this archive.'
     sorter = next(w for w in descendants(app) if isinstance(w, ttk.Combobox) and 'Name ascending' in w.cget('values'))
     sorter.set('Name descending')

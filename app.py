@@ -23,7 +23,6 @@ import subprocess
 from concurrent.futures import ThreadPoolExecutor
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox, font as tkfont
-from PIL import ImageTk, Image
 from windows_shell import reveal_file, logical_drive_roots, set_titlebar_theme
 from brand import APP_NAME, APP_TITLE, APP_VERSION, asset_path
 from tree_icons import navigation_icons
@@ -38,6 +37,8 @@ from thumbnail_edits import (ThumbnailEditStore, ThumbnailEditDatabaseError,
                              ThumbnailEditCancelledError, ThumbnailFileChangedError)
 from thumbnail_editor import ThumbnailEditor
 from shortcuts import migrate as migrate_shortcuts, validate as validate_shortcuts, legacy_actions, command_for_key, event_key
+from smooth_scroll import SmoothScroller, wheel_pixels
+from gallery_card import GalleryCard
 
 DATA = (Path(os.environ['LOCALAPPDATA']) / 'ArchiveShelf' if os.environ.get('LOCALAPPDATA') else
         Path.home() / 'Library/Application Support/File Tripitaka' if sys.platform == 'darwin' else
@@ -213,33 +214,39 @@ class App(Preferences, tk.Tk):
         sorter.bind('<<ComboboxSelected>>', lambda e: self.apply_search())
         tools = ttk.Frame(body, padding=(10, 0, 10, 8))
         tools.pack(fill='x')
-        tools.columnconfigure(2, weight=1, minsize=44)
+        tools.columnconfigure(1, weight=1)
         ttk.Button(tools, text=tr('맨 위로 ↑'), style='Toolbar.TButton',
                    command=lambda: self.scroll_view('moveto', 0)).grid(row=0, column=0, padx=(0, 6))
-        ttk.Label(tools, text=tr('썸네일 크기')).grid(row=0, column=1)
-        self.thumbnail_scale = ttk.Scale(tools, from_=120, to=320, variable=self.thumb_size, command=self.size_changed, length=140)
-        self.thumbnail_scale.grid(row=0, column=2, sticky='w', padx=6)
+        controls = self.thumbnail_controls = ttk.Frame(tools)
+        controls.grid(row=0, column=1, sticky='e')
+        controls.columnconfigure(1, weight=1, minsize=44)
+        ttk.Label(controls, text=tr('썸네일 크기')).grid(row=0, column=0)
+        self.thumbnail_scale = ttk.Scale(controls, from_=120, to=320, variable=self.thumb_size, command=self.size_changed, length=140)
+        self.thumbnail_scale.grid(row=0, column=1, sticky='w', padx=6)
         self.fit_enabled = tk.BooleanVar(value=False)
-        self.fit_button = ttk.Checkbutton(tools, text=tr('창에 맞춤 OFF'), style='Toolbar.Fit.Toolbutton', variable=self.fit_enabled, command=self.toggle_fit)
-        self.fit_button.grid(row=0, column=3, padx=(0, 4))
-        ttk.Label(tools, text=tr('미리보기')).grid(row=0, column=4, padx=(6, 4))
-        previews = ttk.Combobox(tools, state='readonly', textvariable=self.preview_count,
+        self.fit_button = ttk.Checkbutton(controls, text=tr('창에 맞춤 OFF'), style='Toolbar.Fit.Toolbutton', variable=self.fit_enabled, command=self.toggle_fit)
+        self.fit_button.grid(row=0, column=2, padx=(0, 4))
+        ttk.Label(controls, text=tr('미리보기')).grid(row=0, column=3, padx=(6, 4))
+        previews = ttk.Combobox(controls, state='readonly', textvariable=self.preview_count,
                                values=['1장', '2장', '3장'], width=4, style='Toolbar.TCombobox')
-        previews.grid(row=0, column=5)
+        previews.grid(row=0, column=4)
         previews.bind('<<ComboboxSelected>>', self.change_preview_count)
-        sampling = self.sampling_control = ttk.Combobox(tools, state='readonly', textvariable=self.preview_sampling,
+        sampling = self.sampling_control = ttk.Combobox(controls, state='readonly', textvariable=self.preview_sampling,
                                                       values=['순차 보기', '비율 보기'], width=8, style='Toolbar.TCombobox')
-        sampling.grid(row=0, column=6, padx=(4, 0))
+        sampling.grid(row=0, column=5, padx=(4, 0))
         sampling.configure(state='disabled' if self.preview_count.get() == '1장' else 'readonly')
         sampling.bind('<<ComboboxSelected>>', self.change_preview_count)
-        self.thumbnail_edit_button = ttk.Button(tools, text=tr('썸네일 영역 편집'),
+        self.thumbnail_edit_button = ttk.Button(controls, text=tr('썸네일 영역 편집'),
                                                style='Toolbar.TButton', command=self.edit_thumbnail, state='disabled')
-        self.thumbnail_edit_button.grid(row=0, column=7, sticky='e', padx=(6, 0))
+        self.thumbnail_edit_button.grid(row=0, column=6, sticky='e', padx=(6, 0))
         gallery = ttk.Frame(body)
         gallery.pack(fill='both', expand=True)
         self.canvas = tk.Canvas(gallery, bg='#edf0f5', highlightthickness=0)
         self.scroll = ttk.Scrollbar(gallery, orient='vertical', command=self.scroll_view)
-        self.canvas.configure(yscrollcommand=self.view_changed, yscrollincrement=30)
+        self.canvas.configure(yscrollcommand=self.view_changed, yscrollincrement=1)
+        self.smooth_scroll = SmoothScroller(
+            position=lambda: self.canvas.canvasy(0), limit=self.scroll_limit,
+            move=self.move_scroll_pixel, schedule=self.after, cancel=self.after_cancel)
         self.scroll.pack(side='right', fill='y')
         self.canvas.pack(fill='both', expand=True)
         self.canvas.configure(takefocus=True)
@@ -277,6 +284,9 @@ class App(Preferences, tk.Tk):
         localize_widgets(self)
         self.status.set(tr(self.status.get()))
         self.refresh_card_labels()
+        for _, _, thumbnail, _ in self.cards.values():
+            if thumbnail.text:
+                thumbnail.show_error(tr(thumbnail.text))
         # Folder names and paths are literal; only the nearby-location prefix changes.
         for node, path in self.tree_paths.items():
             text = self.tree.item(node, 'text') if self.tree.exists(node) else ''
@@ -318,6 +328,7 @@ class App(Preferences, tk.Tk):
     def select_card(self, path):
         if path not in self.filtered:
             return
+        self.smooth_scroll.stop()
         self.selected_path = path
         self.canvas.focus_set()
         self.paint_selection()
@@ -325,12 +336,13 @@ class App(Preferences, tk.Tk):
     def paint_selection(self):
         self.update_thumbnail_edit_button()
         for path, frame, _, _ in self.cards.values():
-            frame.configure(style='SelectedCard.TFrame' if path == self.selected_path else 'Card.TFrame')
+            frame.set_selected(path == self.selected_path)
 
     def update_thumbnail_edit_button(self):
         self.thumbnail_edit_button.state(['!disabled'] if self.selected_path in self.filtered else ['disabled'])
 
     def move_selection(self, event):
+        self.smooth_scroll.stop()
         if not self.filtered:
             return 'break'
         try:
@@ -498,6 +510,7 @@ class App(Preferences, tk.Tk):
         return self.display_size + 120 + max(0, self.font_size - 10) * 6
 
     def remember_position(self):
+        self.smooth_scroll.stop()
         if not self.current_folder or not self.filtered:
             return
         index = min(len(self.filtered) - 1, max(0, int(self.canvas.canvasy(0) // self.row_height()) * self.columns()))
@@ -528,6 +541,7 @@ class App(Preferences, tk.Tk):
         self.save()
 
     def restore_position(self, view):
+        self.smooth_scroll.stop()
         selected = view.get('selected')
         self.selected_path = next((p for p in self.filtered if str(p) == selected), None)
         anchor = view.get('anchor')
@@ -766,6 +780,7 @@ class App(Preferences, tk.Tk):
 
     def reconcile_cards(self, candidates):
         # Keep surviving card/PhotoImage/worker objects, changing their positions only.
+        self.smooth_scroll.stop()
         top = max(0, self.canvas.canvasy(0))
         self.filtered = sort_archives(
             [p for p in candidates if self.query.get().casefold() in p.name.casefold()],
@@ -997,17 +1012,18 @@ class App(Preferences, tk.Tk):
         if error:
             if path is not None:
                 self.preview_errors.add(str(path))
-            self.photos.pop(label, None)
-            label.configure(image='', text=tr('미리보기 불가\n' + error[:110]), wraplength=185)
+            label.show_error(tr('미리보기 불가\n' + error[:110]))
             return
         if path is not None:
             self.preview_errors.discard(str(path))
-        image = image.copy()
-        image.thumbnail((self.thumb_size.get() * self.settings.get('preview_count', 1),
-                         self.thumb_size.get() + 20), Image.Resampling.LANCZOS)
-        photo = ImageTk.PhotoImage(image)
-        self.photos[label] = photo
-        label.configure(image=photo, text='')
+        label.show_image(image, (self.thumb_size.get() * self.settings.get('preview_count', 1),
+                                 self.thumb_size.get() + 20))
+
+    def keep_thumbnail_photo(self, label, photo):
+        if photo is None:
+            self.photos.pop(label, None)
+        else:
+            self.photos[label] = photo
 
     def rename_file(self, path=None):
         path = path if path is not None else self.selected_path
@@ -1157,36 +1173,12 @@ class App(Preferences, tk.Tk):
         return 'break'
 
     def update_badge(self, frame, path):
-        star = getattr(frame, 'favorite_badge', None)
         show = self.active_tab == 'all' and str(path) in self.favorites
-        if not show:
-            if star is not None:
-                star.destroy()
-                frame.favorite_badge = None
-            return
-        if star is not None:
-            return
-        star = tk.Label(frame, text='★', fg='#FFD21F', bg=self.palette['field'], font=('Segoe UI', 17, 'bold'), padx=3, pady=0)
-        star.place(relx=1.0, x=-3, y=3, anchor='ne')
-        star.bind('<Button-1>', lambda e: self.select_card(path))
-        star.bind('<Double-Button-1>', lambda e: self.double_click(path))
-        star.bind('<Button-3>', lambda e: self.context(e, path))
-        if sys.platform == 'darwin':
-            star.bind('<Button-2>', lambda e: self.context(e, path))
-            star.bind('<Control-Button-1>', lambda e: self.context(e, path))
-        star.bind('<Enter>', lambda e: self.status.set(tr(str(path))))
-        frame.favorite_badge = star
+        frame.set_favorite(show)
 
     def update_card_labels(self, frame, path):
         name, details = card_text(path, self.metadata.get(path, (0, 0)), self.settings)
-        frame.title_label.configure(text=name)
-        frame.info_label.configure(text=details)
-        frame.title_label.pack_forget()
-        frame.info_label.pack_forget()
-        if name:
-            frame.title_label.pack(fill='x', pady=(8, 0))
-        if details:
-            frame.info_label.pack(fill='x')
+        frame.set_text(name, details)
 
     def refresh_card_labels(self):
         for path, frame, _, _ in self.cards.values():
@@ -1229,6 +1221,7 @@ class App(Preferences, tk.Tk):
             self.navigate(str(root.resolve()))
             return
         root = root.resolve()
+        self.smooth_scroll.stop()
         if self.pending_restore is None:
             self.remember_position()
             self.pending_restore = self.views.get(self.current_folder)
@@ -1276,6 +1269,7 @@ class App(Preferences, tk.Tk):
 
     def apply_search(self):
         self.search_job = None
+        self.smooth_scroll.stop()
         self.save()
         candidates = [Path(p) for p in self.favorites] if self.only_favorites.get() else self.files
         self.filtered = sort_archives(
@@ -1323,12 +1317,28 @@ class App(Preferences, tk.Tk):
         return max(1, self.canvas.winfo_width() // self.cell_width())
 
     def update_region(self):
+        self.smooth_scroll.stop()
         rows = (len(self.filtered) + self.columns() - 1) // self.columns()
         self.canvas.configure(scrollregion=(0, 0, self.canvas.winfo_width(),
                                            max(self.canvas.winfo_height(), rows * self.row_height())))
 
     def scroll_view(self, *args):
+        self.smooth_scroll.stop()
+        # Keep scrollbar arrows useful now that the canvas uses single pixels.
+        if len(args) == 3 and args[0] == 'scroll' and args[2] == 'units':
+            args = ('scroll', int(args[1]) * 30, 'units')
         self.canvas.yview(*args)
+        self.schedule_refresh()
+
+    def scroll_height(self):
+        region = self.tk.splitlist(self.canvas.cget('scrollregion'))
+        return float(region[3]) if region else self.canvas.winfo_height()
+
+    def scroll_limit(self):
+        return max(0, self.scroll_height() - self.canvas.winfo_height())
+
+    def move_scroll_pixel(self, top):
+        self.canvas.yview_moveto(top / max(1, self.scroll_height()))
         self.schedule_refresh()
 
     def view_changed(self, first, last):
@@ -1342,16 +1352,10 @@ class App(Preferences, tk.Tk):
             return
         if event.widget == self.tree or event.widget == self.favorite_list:
             return
-        if getattr(event, 'num', None) in (4, 5):
-            self.scroll_view('scroll', -3 if event.num == 4 else 3, 'units')
-            return
-        if not event.delta:
-            return
-        if sys.platform == 'darwin':
-            self.scroll_view('scroll', max(-12, min(12, -int(event.delta))), 'units')
-        else:
-            steps = int(-event.delta / 120) or (-1 if event.delta > 0 else 1)
-            self.scroll_view('scroll', steps * 3, 'units')
+        pixels = wheel_pixels(getattr(event, 'delta', 0), getattr(event, 'num', None), sys.platform)
+        if pixels:
+            self.smooth_scroll.scroll_by(pixels)
+            return 'break'
 
     def schedule_refresh(self):
         if self.refresh_job is None:
@@ -1363,8 +1367,11 @@ class App(Preferences, tk.Tk):
             self.refresh_job = None
         self.update_thumbnail_edit_button()
         columns = self.columns()
+        width = self.canvas.winfo_width()
+        cell_width = self.cell_width()
+        row_height = self.row_height()
         wanted = set(visible_indices(len(self.filtered), columns,
-                                    self.canvas.canvasy(0), self.canvas.winfo_height(), self.row_height()))
+                                    self.canvas.canvasy(0), self.canvas.winfo_height(), row_height))
         for index in list(self.cards):
             if index not in wanted:
                 _, frame, label, window = self.cards.pop(index)
@@ -1377,45 +1384,35 @@ class App(Preferences, tk.Tk):
         for index in sorted(wanted):
             column = index % columns
             if self.fit_columns:
-                x = column * self.canvas.winfo_width() // columns
-                card_width = (column + 1) * self.canvas.winfo_width() // columns - x + 1
+                x = column * width // columns
+                card_width = (column + 1) * width // columns - x + 1
             else:
-                x = column * self.cell_width()
-                card_width = self.cell_width() + 1
-            y = (index // columns) * self.row_height()
+                x = column * cell_width
+                card_width = cell_width + 1
+            y = (index // columns) * row_height
+            geometry = (x, y, card_width, row_height + 1)
             if index in self.cards:
                 _, frame, _, window = self.cards[index]
-                self.canvas.coords(window, x, y)
-                self.canvas.itemconfigure(window, width=card_width, height=self.row_height() + 1)
-                frame.configure(width=card_width, height=self.row_height() + 1)
+                frame.layout(*geometry)
                 continue
             path = self.filtered[index]
-            frame = ttk.Frame(self.canvas, padding=8, style='SelectedCard.TFrame' if path == self.selected_path else 'Card.TFrame', relief='solid', width=card_width, height=self.row_height() + 1)
-            frame.pack_propagate(False)
-            label = ttk.Label(frame, style='Card.TLabel', text=tr('표지 읽는 중…'), anchor='center', width=25)
-            label.archive_path = path
-            label.pack(fill='both', expand=True)
-            title = ttk.Label(frame, style='Card.TLabel', text=path.name, wraplength=self.cell_width() - 30, anchor='center')
-            title._literal_user_text = True
-            title.pack(fill='x', pady=(8, 0))
-            size, stamp = self.metadata.get(path, (0, 0))
-            info = ttk.Label(frame, style='CardMuted.TLabel', text=tr(f'{size / (1024 ** 2):.1f} MB · ' + (datetime.fromtimestamp(stamp).strftime('%Y-%m-%d') if stamp else '날짜 없음')), anchor='center')
-            info._literal_user_text = True
-            info.pack(fill='x')
-            frame.info_label = info
-            frame.title_label = title
+            # Images, text and borders share one canvas paint pass. Embedded
+            # native child windows can leave stale strips when scrolling on Windows.
+            frame = GalleryCard(self.canvas, path, *geometry, self.palette,
+                                (self.ui_font, self.font_size), on_photo=self.keep_thumbnail_photo)
+            label = frame.thumbnail
+            label.show_error(tr('표지 읽는 중…'))
+            frame.set_selected(path == self.selected_path)
             self.update_card_labels(frame, path)
-            widgets = [frame, label, title, info]
             self.update_badge(frame, path)
-            for widget in widgets:
-                widget.bind('<Button-1>', lambda e, p=path: self.select_card(p))
-                widget.bind('<Double-Button-1>', lambda e, p=path: self.double_click(p))
-                widget.bind('<Button-3>', lambda e, p=path: self.context(e, p))
-                if sys.platform == 'darwin':
-                    widget.bind('<Button-2>', lambda e, p=path: self.context(e, p))
-                    widget.bind('<Control-Button-1>', lambda e, p=path: self.context(e, p))
-                widget.bind('<Enter>', lambda e, p=path: self.status.set(tr(str(p))))
-            window = self.canvas.create_window((x, y), window=frame, anchor='nw', width=card_width, height=self.row_height() + 1)
+            frame.bind('<Button-1>', lambda e, p=path: self.select_card(p))
+            frame.bind('<Double-Button-1>', lambda e, p=path: self.double_click(p))
+            frame.bind('<Button-3>', lambda e, p=path: self.context(e, p))
+            if sys.platform == 'darwin':
+                frame.bind('<Button-2>', lambda e, p=path: self.context(e, p))
+                frame.bind('<Control-Button-1>', lambda e, p=path: self.context(e, p))
+            frame.bind('<Enter>', lambda e, p=path: self.status.set(tr(str(p))))
+            window = frame.background
             self.cards[index] = (path, frame, label, window)
             self.pending.append((self.generation, path, label))
 
@@ -1484,7 +1481,7 @@ class App(Preferences, tk.Tk):
                     self.add_cards(value)
             else:
                 label, im, *revision = value
-                if not label.winfo_exists():
+                if not label.exists():
                     continue
                 path = getattr(label, 'archive_path', None)
                 if revision and revision[0] != self.thumbnail_revisions.get(str(path), 0):
@@ -1570,6 +1567,7 @@ class App(Preferences, tk.Tk):
 
     def close(self):
         self.closing = True
+        self.smooth_scroll.stop()
         self.remember_position()
         self.save()
         self.pending.clear()
@@ -1583,6 +1581,10 @@ class App(Preferences, tk.Tk):
         self.pool.shutdown(wait=False, cancel_futures=True)
         self.folder_pool.shutdown(wait=False, cancel_futures=True)
         self.thumbnail_edit_pool.shutdown(wait=False, cancel_futures=True)
+        for _, frame, _, _ in self.cards.values():
+            frame.destroy()
+        self.cards.clear()
+        self.photos.clear()
         self.destroy()
 
 
