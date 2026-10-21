@@ -438,6 +438,8 @@ class App(Preferences, tk.Tk):
             return 'break'
         if self.selected_path in self.filtered:
             path = self.selected_path
+            if command == 'thumbnail_edit':
+                return self.edit_thumbnail()
             if command == 'rename':
                 return self.rename_file()
             if command == 'trash':
@@ -912,6 +914,7 @@ class App(Preferences, tk.Tk):
         path = path if path is not None else self.selected_path
         if path not in self.filtered:
             return 'break'
+        self.smooth_scroll.stop()
         existing = self.thumbnail_editor_window
         if existing is not None and existing.winfo_exists():
             existing.lift()
@@ -1555,7 +1558,7 @@ class App(Preferences, tk.Tk):
             self.context_menu.destroy()
         menu = self.context_menu = tk.Menu(self, tearoff=False, bg=self.palette['panel'], fg=self.palette['fg'], activebackground=self.palette['accent'], activeforeground='white')
         menu.add_command(label=tr('★ 즐겨찾기 해제' if str(path) in self.favorites else '☆ 즐겨찾기 추가'), accelerator=self.shortcut_label('favorite'), command=lambda: self.toggle_favorite(path))
-        menu.add_command(label=tr('썸네일 영역 편집'), command=lambda: self.edit_thumbnail(path))
+        menu.add_command(label=tr('썸네일 영역 편집'), accelerator=self.shortcut_label('thumbnail_edit'), command=lambda: self.edit_thumbnail(path))
         menu.add_command(label=tr('파일 정보'), command=lambda: self.file_info(path))
         menu.add_command(label=tr('기본 앱으로 열기' if sys.platform == 'darwin' else '꿀뷰로 열기'), accelerator=self.shortcut_label('viewer'), command=lambda: self.open_archive(path))
         menu.add_command(label=tr('파일 위치 열기'), accelerator=self.shortcut_label('reveal'), command=lambda: self.reveal(path))

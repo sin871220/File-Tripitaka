@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/sin871220/File-Tripitaka/releases/tag/v1.2.4"><strong>1.2.4 다운로드</strong></a>
+  <a href="https://github.com/sin871220/File-Tripitaka/releases/tag/v1.2.5"><strong>1.2.5 다운로드</strong></a>
   &nbsp;·&nbsp;
   <a href="#처음-사용하기">사용 방법</a>
   &nbsp;·&nbsp;
@@ -27,17 +27,17 @@
 
 ## 다운로드
 
-**현재 버전은 1.2.4입니다.** 드롭다운을 펼치고 휠을 돌릴 때의 오류와 스크롤바의 소수 단위 입력 오류를 수정했습니다. 갤러리·폴더 목록·설정·썸네일 편집기의 휠 동작을 각 영역에서 독립적으로 처리합니다. [1.2.4 업데이트 내역](BETA-RELEASE.md#124-업데이트-목록)을 확인하세요.
+**현재 버전은 1.2.5입니다.** 설정의 기능별 단축키에 **썸네일 영역 편집**을 추가했습니다. 원하는 키를 두 개까지 지정해 선택한 파일의 편집기를 열 수 있으며, 기존 키 설정과 별도 더블클릭 동작을 유지합니다. [1.2.5 업데이트 내역](BETA-RELEASE.md#125-업데이트-목록)을 확인하세요.
 
-[v1.2.4 다운로드 페이지](https://github.com/sin871220/File-Tripitaka/releases/tag/v1.2.4)에서 내 컴퓨터에 맞는 ZIP을 받으세요. Python을 따로 설치할 필요가 없습니다.
+[v1.2.5 다운로드 페이지](https://github.com/sin871220/File-Tripitaka/releases/tag/v1.2.5)에서 내 컴퓨터에 맞는 ZIP을 받으세요. Python을 따로 설치할 필요가 없습니다.
 
 각 ZIP의 `THIRD-PARTY` 폴더에 Tcl/Tk와 포함 라이브러리의 라이선스·고지문이 들어 있습니다. `SHA256SUMS.txt`로 다운로드한 파일의 무결성을 확인할 수 있습니다.
 
 | 내 컴퓨터 | 받을 파일 | 실행 방법 |
 |---|---|---|
-| Windows 10/11 · 64비트 | [Windows-x64.zip](https://github.com/sin871220/File-Tripitaka/releases/download/v1.2.4/File-Tripitaka-v1.2.4-Windows-x64.zip) | 압축을 풀고 `FileManDaejanggyeong.exe` 실행 |
-| Mac · Apple Silicon(M1 이상) | [macOS-arm64.zip](https://github.com/sin871220/File-Tripitaka/releases/download/v1.2.4/File-Tripitaka-v1.2.4-macOS-arm64.zip) | 압축을 풀고 `File Tripitaka.app`을 응용 프로그램 폴더로 이동 |
-| Mac · Intel | [macOS-x86_64.zip](https://github.com/sin871220/File-Tripitaka/releases/download/v1.2.4/File-Tripitaka-v1.2.4-macOS-x86_64.zip) | 압축을 풀고 `File Tripitaka.app`을 응용 프로그램 폴더로 이동 |
+| Windows 10/11 · 64비트 | [Windows-x64.zip](https://github.com/sin871220/File-Tripitaka/releases/download/v1.2.5/File-Tripitaka-v1.2.5-Windows-x64.zip) | 압축을 풀고 `FileManDaejanggyeong.exe` 실행 |
+| Mac · Apple Silicon(M1 이상) | [macOS-arm64.zip](https://github.com/sin871220/File-Tripitaka/releases/download/v1.2.5/File-Tripitaka-v1.2.5-macOS-arm64.zip) | 압축을 풀고 `File Tripitaka.app`을 응용 프로그램 폴더로 이동 |
+| Mac · Intel | [macOS-x86_64.zip](https://github.com/sin871220/File-Tripitaka/releases/download/v1.2.5/File-Tripitaka-v1.2.5-macOS-x86_64.zip) | 압축을 풀고 `File Tripitaka.app`을 응용 프로그램 폴더로 이동 |
 
 Mac 버전은 **macOS 15 이상**을 지원합니다. Mac의 칩 종류는  → **이 Mac에 관하여**에서 확인할 수 있습니다.
 
@@ -81,7 +81,9 @@ Mac의 기본 더블클릭 동작은 **Finder에서 파일 위치 열기**입니
 
 ### 기능별 단축키
 
-**설정 → 단축키**에서 파일 위치 열기, 뷰어로 열기, 다른 뷰어로 열기, 즐겨찾기 추가/해제, 이름 바꾸기, 휴지통 이동, **폴더 패널 접기/펴기**, **창에 맞춤 ON/OFF**에 각각 키를 두 개까지 지정할 수 있습니다. 키 버튼을 누른 뒤 원하는 키 또는 Ctrl·Shift·Alt 조합을 누르세요. Mac은 Cmd 조합도 지원합니다.
+**설정 → 단축키**에서 파일 위치 열기, 뷰어로 열기, 다른 뷰어로 열기, 즐겨찾기 추가/해제, **썸네일 영역 편집**, 이름 바꾸기, 휴지통 이동, **폴더 패널 접기/펴기**, **창에 맞춤 ON/OFF**에 각각 키를 두 개까지 지정할 수 있습니다. 키 버튼을 누른 뒤 원하는 키 또는 Ctrl·Shift·Alt 조합을 누르세요. Mac은 Cmd 조합도 지원합니다.
+
+**썸네일 영역 편집**의 기본 단축키는 미할당이며 기존 키 설정을 유지합니다. 파일을 선택하고 썸네일 영역에서 지정한 키를 누르면 편집기가 열립니다. 검색·파일명 입력 중이나 다른 대화상자에서는 실행하지 않습니다. 지정한 키는 우클릭 메뉴에도 표시합니다.
 
 폴더 패널과 창에 맞춤은 기본 단축키가 미할당이며 기존 설정에 새 항목만 추가됩니다. 두 기능은 썸네일을 클릭하지 않아도 메인 창의 폴더 탐색·즐겨찾는 폴더·버튼 등에서 사용할 수 있습니다. 파일 선택이 없거나 빈 폴더여도 동작하며, 검색·경로 입력·설정창에서는 입력을 가로채지 않습니다. 창에 맞춤은 기존 버튼과 똑같이 ON/OFF를 전환합니다.
 
@@ -110,7 +112,7 @@ Mac의 기본 더블클릭 동작은 **Finder에서 파일 위치 열기**입니
 
 가로나 세로로 긴 이미지에서 원하는 부분을 대표 썸네일로 고를 수 있습니다.
 
-1. 압축파일 썸네일을 선택한 뒤 **썸네일 크기·창에 맞춤·미리보기와 같은 줄 오른쪽의 썸네일 영역 편집 버튼**을 누르세요. **오른쪽 클릭 → 썸네일 영역 편집**으로도 열 수 있습니다.
+1. 압축파일 썸네일을 선택한 뒤 **썸네일 크기·창에 맞춤·미리보기와 같은 줄 오른쪽의 썸네일 영역 편집 버튼**을 누르세요. **오른쪽 클릭 → 썸네일 영역 편집** 또는 **설정 → 단축키**에서 지정한 키로도 열 수 있습니다.
 2. **썸네일 위치**와 압축파일 안의 이미지를 고르세요. 2장·3장 보기에서는 위치마다 다른 이미지와 영역을 저장할 수 있습니다. **1번은 오른쪽**이며 이미지가 부족하면 실제 장수만 선택할 수 있습니다.
 3. 기본은 **자유 비율**입니다. 미리보기에서 드래그해 영역을 만들고, 안쪽을 끌어 이동하거나 테두리의 손잡이로 크기를 바꾸세요. **썸네일 비율 (127:180)**을 고르면 1270×1800과 같은 세로 비율로 고정합니다. 원본 비율과 전체 이미지 선택도 지원하며, 휠·슬라이더로 확대하고 **Space+드래그**로 이미지를 이동할 수 있습니다.
 4. 오른쪽 미리보기로 결과를 확인하고 **적용**을 누르세요. 창을 열어 둔 채 다른 썸네일 위치도 편집할 수 있습니다. 저장한 영역을 지우려면 해당 위치를 선택하고 **자동 썸네일로 복원**을 누르세요.
@@ -179,7 +181,7 @@ Windows 소스 실행은 **새 버전 ZIP을 새 폴더에 전부 푼 뒤 그 �
 
 공유폴더를 통해 다른 Windows 컴퓨터로 옮겨 테스트할 때는 `python scripts/package_windows_test.py`로 **Windows-Test.zip 하나**를 만들 수 있습니다. 코드·아이콘·글꼴과 실행 배치가 한 버전 폴더에 들어가며, Git 미추적 신규 모듈도 포함합니다. ZIP 전체를 옮겨 새 폴더에 푼 뒤 그 안의 배치를 실행하세요. 이 테스트 ZIP에는 Python이나 EXE가 포함되지 않습니다.
 
-**배포 ZIP과 소스 테스트 ZIP은 다릅니다.** GitHub Releases의 `Windows-x64`·`macOS-arm64`·`macOS-x86_64` 패키지는 Python을 포함합니다. `python scripts/package_windows_test.py`로 만드는 현재 소스 테스트 `File-Tripitaka-v1.2.4-Windows-Test.zip`은 소스 실행용이므로 Windows용 Python 3.12 이상을 따로 설치해야 합니다. 테스트 ZIP도 현재 공개 배포 버전과 같은 1.2.4 소스로 만듭니다.
+**배포 ZIP과 소스 테스트 ZIP은 다릅니다.** GitHub Releases의 `Windows-x64`·`macOS-arm64`·`macOS-x86_64` 패키지는 Python을 포함합니다. `python scripts/package_windows_test.py`로 만드는 현재 소스 테스트 `File-Tripitaka-v1.2.5-Windows-Test.zip`은 소스 실행용이므로 Windows용 Python 3.12 이상을 따로 설치해야 합니다. 테스트 ZIP도 현재 공개 배포 버전과 같은 1.2.5 소스로 만듭니다.
 
 - Windows: 소스 실행은 `run-windows.bat`, 배포 빌드는 `build-windows.bat`.
 - macOS: `build-macos.sh`. Apple Silicon과 Intel은 해당 CPU용 Python 환경에서 각각 빌드합니다.

@@ -11,7 +11,7 @@ from localization import translate as tr
 import viewer
 
 
-COMMANDS = ('reveal', 'viewer', 'custom_viewer', 'favorite', 'rename', 'trash',
+COMMANDS = ('reveal', 'viewer', 'custom_viewer', 'favorite', 'thumbnail_edit', 'rename', 'trash',
             'sidebar', 'fit')
 _MODIFIERS = {'ctrl': 'Ctrl', 'control': 'Ctrl', 'cmd': 'Cmd',
               'command': 'Cmd', 'meta': 'Cmd', 'alt': 'Alt', 'option': 'Alt',
@@ -53,7 +53,8 @@ def command_labels(platform=None):
                 viewer=(viewer.DEFAULT_APP_ACTION if (platform or sys.platform) == 'darwin'
                         else viewer.HONEYVIEW_ACTION),
                 custom_viewer=viewer.CUSTOM_VIEWER_ACTION,
-                favorite='즐겨찾기 추가/해제', rename='파일 이름 바꾸기',
+                favorite='즐겨찾기 추가/해제', thumbnail_edit='썸네일 영역 편집',
+                rename='파일 이름 바꾸기',
                 trash='휴지통으로 보내기', sidebar='폴더 패널 접기/펴기',
                 fit='창에 맞춤 ON/OFF')
 
@@ -182,10 +183,10 @@ def command_for_key(mapping, key):
 
 def legacy_actions(mapping, platform=None):
     labels = command_labels(platform)
-    # Older versions cannot dispatch view commands from legacy action strings.
+    # Older versions cannot dispatch view/editor commands from legacy strings.
     # Keep Enter/Space disabled there rather than falling back to a file action.
     labels = {command: label for command, label in labels.items()
-              if command not in ('sidebar', 'fit')}
+              if command not in ('sidebar', 'fit', 'thumbnail_edit')}
     return {field: labels.get(command_for_key(mapping, key), '없음')
             for field, key in (('enter_action', 'Enter'), ('space_action', 'Space'))}
 

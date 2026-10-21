@@ -20,6 +20,8 @@ class ShortcutTests(unittest.TestCase):
         self.assertEqual(windows['rename'], ['F2'])
         self.assertEqual(windows['sidebar'], [])
         self.assertEqual(windows['fit'], [])
+        self.assertEqual(windows['thumbnail_edit'], [])
+        self.assertEqual(mac['thumbnail_edit'], [])
         self.assertEqual(shortcuts.validate(mac, 'darwin'), mac)
         mac['reveal'].clear()
         self.assertEqual(shortcuts.defaults('darwin')['reveal'], ['Enter', 'Space'])
@@ -68,8 +70,43 @@ class ShortcutTests(unittest.TestCase):
         settings = dict(shortcuts=saved)
         before = copy.deepcopy(settings)
         self.assertEqual(shortcuts.migrate(settings, 'win32'),
-                         dict(saved, sidebar=[], fit=[]))
+                         dict(saved, sidebar=[], fit=[], thumbnail_edit=[]))
         self.assertEqual(settings, before)
+
+    def test_existing_eight_commands_keep_their_assignments_when_editor_is_added(self):
+        saved = dict(reveal=['Ctrl+R'], viewer=['Space'], custom_viewer=[],
+                     favorite=['Enter'], rename=['F2'], trash=['Delete'],
+                     sidebar=['Ctrl+B'], fit=['Ctrl+F'])
+        settings = dict(shortcuts=saved, double_click='파일 위치 열기')
+        before = copy.deepcopy(settings)
+        for platform in ('win32', 'darwin'):
+            with self.subTest(platform=platform):
+                self.assertEqual(shortcuts.migrate(settings, platform),
+                                 dict(saved, thumbnail_edit=[]))
+        self.assertEqual(settings, before)
+
+    def test_editor_supports_two_keys_and_rejects_conflicts(self):
+        mapping = shortcuts.validate(dict(thumbnail_edit=['F8', 'Ctrl+E']), 'win32')
+        self.assertEqual(shortcuts.command_labels('win32')['thumbnail_edit'], '썸네일 영역 편집')
+        self.assertEqual(shortcuts.command_for_key(mapping, 'F8'), 'thumbnail_edit')
+        self.assertEqual(shortcuts.command_for_key(mapping, 'control+e'), 'thumbnail_edit')
+        self.assertEqual(shortcuts.migrate(dict(shortcuts=mapping), 'win32'), mapping)
+        for conflicting in (dict(thumbnail_edit=['F2'], rename=['F2']),
+                            dict(thumbnail_edit=['Return'], favorite=['Enter']),
+                            dict(thumbnail_edit=['Ctrl+E', 'control+e'])):
+            with self.subTest(mapping=conflicting), self.assertRaisesRegex(ValueError, '중복'):
+                shortcuts.validate(conflicting, 'win32')
+        with self.assertRaisesRegex(ValueError, '최대 2개'):
+            shortcuts.validate(dict(thumbnail_edit=['F6', 'F7', 'F8']), 'win32')
+
+    def test_editor_enter_space_do_not_become_unsupported_legacy_actions(self):
+        for platform in ('win32', 'darwin'):
+            with self.subTest(platform=platform):
+                mapping = shortcuts.validate(dict(thumbnail_edit=['Enter', 'Space']), platform)
+                self.assertEqual(shortcuts.legacy_actions(mapping, platform),
+                                 dict(enter_action='없음', space_action='없음'))
+                self.assertEqual(shortcuts.command_for_key(mapping, 'Return'), 'thumbnail_edit')
+                self.assertEqual(shortcuts.command_for_key(mapping, 'Space'), 'thumbnail_edit')
 
     def test_view_keys_dispatch_and_reject_conflicts_with_existing_commands(self):
         mapping = shortcuts.validate(dict(sidebar=['Ctrl+B'], fit=['Ctrl+F']), 'win32')

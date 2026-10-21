@@ -3,11 +3,13 @@
 Run with ``python tests/shortcuts_smoke.py`` on a desktop with Tk available.
 No external viewer is launched and no file is sent to the real Trash.
 """
+import io
 import json
 import os
 from pathlib import Path
 import sys
 import tempfile
+import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -41,6 +43,7 @@ class ShortcutSmoke(unittest.TestCase):
         }), 'utf-8')
         self.errors = []
         self.messages = []
+        self.editors = []
         self.addCleanup(patch.stopall)
         patch.object(module, 'cover', lambda *args: Image.new('RGB', (80, 100), 'blue')).start()
         patch.object(module.App, 'load_favorite_metadata').start()
@@ -57,7 +60,21 @@ class ShortcutSmoke(unittest.TestCase):
     def close_app(self):
         if self.app.winfo_exists():
             self.app.close()
+        for editor in self.editors:
+            editor._executor.shutdown(wait=True, cancel_futures=True)
+        for pool in (self.app.pool, self.app.folder_pool, self.app.thumbnail_edit_pool):
+            pool.shutdown(wait=True, cancel_futures=True)
         self.assertFalse(self.errors, self.errors)
+
+    def wait_for(self, predicate, timeout=10):
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            self.app.update()
+            if predicate():
+                self.assertFalse(self.errors, self.errors)
+                return
+            time.sleep(0.01)
+        self.fail('Tk operation did not complete')
 
     def load(self, count=120, favorite_tab=False):
         app = self.app
@@ -413,6 +430,8 @@ class ShortcutSmoke(unittest.TestCase):
         capture.settings_cancel()
         app.update()
 
+        dialog.settings_assign_shortcut('thumbnail_edit', 0, 'F9')
+        dialog.settings_assign_shortcut('thumbnail_edit', 1, 'Ctrl+E')
         dialog.settings_reset_shortcuts()
         app.update()
         for command, keys in defaults().items():
@@ -440,11 +459,22 @@ class ShortcutSmoke(unittest.TestCase):
         double_click = app.settings['double_click']
         dialog = self.settings_dialog()
         dialog.settings_assign_shortcut('rename', 0, 'F8')
+        self.assertIn('thumbnail_edit', dialog.shortcut_buttons)
+        self.assertEqual([self.assignment(dialog, 'thumbnail_edit', slot) for slot in (0, 1)], ['', ''])
+        self.assertTrue(any(isinstance(widget, module.ttk.Label)
+                            and widget.cget('text') == '썸네일 영역 편집'
+                            for widget in descendants(dialog)))
+        dialog.settings_assign_shortcut('thumbnail_edit', 0, 'F9')
+        dialog.settings_assign_shortcut('thumbnail_edit', 1, 'Ctrl+F10')
+        with self.assertRaisesRegex(ValueError, '중복'):
+            dialog.settings_assign_shortcut('thumbnail_edit', 1, 'F8')
+        self.assertEqual(self.assignment(dialog, 'thumbnail_edit', 1), 'Ctrl+F10')
         dialog.settings_apply()
         app.update()
         self.assertFalse(dialog.winfo_exists())
         self.assertEqual(app.settings['double_click'], double_click)
         self.assertEqual(app.settings['shortcuts']['rename'], ['F8'])
+        self.assertEqual(app.settings['shortcuts']['thumbnail_edit'], ['F9', 'Ctrl+F10'])
         self.assertEqual(app.settings['shortcuts']['favorite'], ['Enter'])
         self.assertEqual(legacy_actions(app.settings['shortcuts'])['space_action'], '없음')
         self.assertEqual(app.canvas.canvasy(0), top)
@@ -463,10 +493,15 @@ class ShortcutSmoke(unittest.TestCase):
                            if menu.type(index) == 'command'
                            and menu.entrycget(index, 'label') == '파일 이름 바꾸기')
         self.assertEqual(menu.entrycget(rename_item, 'accelerator'), 'F8')
+        editor_item = next(index for index in range(menu.index('end') + 1)
+                           if menu.type(index) == 'command'
+                           and menu.entrycget(index, 'label') == '썸네일 영역 편집')
+        self.assertEqual(menu.entrycget(editor_item, 'accelerator'), 'F9, Ctrl+F10')
 
         app.close()
         saved = json.loads(module.CONFIG.read_text('utf-8'))
         self.assertEqual(saved['shortcuts']['rename'], ['F8'])
+        self.assertEqual(saved['shortcuts']['thumbnail_edit'], ['F9', 'Ctrl+F10'])
         self.assertEqual(saved['shortcuts']['favorite'], ['Enter'])
         self.assertEqual(saved['space_action'], '없음')
         self.assertEqual(saved['double_click'], double_click)
@@ -478,6 +513,7 @@ class ShortcutSmoke(unittest.TestCase):
         app.report_callback_exception = lambda *args: self.errors.append(args)
         app.update()
         self.assertEqual(app.settings['shortcuts']['rename'], ['F8'])
+        self.assertEqual(app.settings['shortcuts']['thumbnail_edit'], ['F9', 'Ctrl+F10'])
         self.assertEqual(app.settings['shortcuts']['favorite'], ['Enter'])
         self.assertEqual(app.settings['double_click'], double_click)
         self.load(count=3)
@@ -485,15 +521,81 @@ class ShortcutSmoke(unittest.TestCase):
         with patch.object(app, 'rename_file') as rename:
             self.key('<F8>')
             rename.assert_called_once()
+        with patch.object(app, 'edit_thumbnail') as edit:
+            self.key('<F9>')
+            # Aqua may synthesize extra Option bits for printable keysyms;
+            # a function key exercises Ctrl dispatch without layout ambiguity.
+            self.key('<Control-F10>')
+            self.assertEqual(edit.call_count, 2)
+
+    def test_editor_shortcut_opens_once_preserves_view_and_protects_inputs_and_modals(self):
+        app = self.app
+        app.settings['shortcuts']['thumbnail_edit'] = ['F8']
+        app.refresh_shortcuts()
+        self.key('<F8>')
+        self.assertIsNone(app.thumbnail_editor_window, 'No file selection must be harmless')
+        self.load()
+        app.canvas.yview_moveto(.4)
+        app.refresh_visible()
+        selected = next(iter(app.cards.values()))[0]
+        image = io.BytesIO()
+        Image.new('RGB', (600, 900), '#3070b0').save(image, 'PNG')
+        with zipfile.ZipFile(selected, 'w') as archive:
+            archive.writestr('page.png', image.getvalue())
+        app.select_card(selected)
+        top = app.canvas.canvasy(0)
+        generation = app.generation
+        search = next(widget for widget in descendants(app)
+                      if isinstance(widget, module.ttk.Entry)
+                      and str(widget.cget('textvariable')) == str(app.query))
+        self.key('<F8>', search)
+        self.assertIsNone(app.thumbnail_editor_window)
+        for target in (app.tree, app.favorite_list, app.thumbnail_edit_button):
+            self.key('<F8>', target)
+            self.assertIsNone(app.thumbnail_editor_window)
+        dialog = self.settings_dialog()
+        self.key('<F8>', dialog)
+        self.key('<F8>', app.canvas)
+        self.assertIsNone(app.thumbnail_editor_window)
+        self.cancel_settings(dialog)
+
+        # Use actual Tk dispatch and an actual temporary PNG archive to verify
+        # the shortcut reaches the editor rather than another file action.
+        self.key('<F8>')
+        editor = app.thumbnail_editor_window
+        self.assertIsNotNone(editor)
+        self.editors.append(editor)
+        self.wait_for(lambda: editor._image is not None and not editor._busy)
+        self.assertIs(app.grab_current(), editor)
+        self.assertEqual(app.canvas.canvasy(0), top)
+        self.assertEqual(app.selected_path, selected)
+        self.assertEqual(app.generation, generation)
+        with patch.object(module, 'ThumbnailEditor', wraps=module.ThumbnailEditor) as constructor:
+            # A queued gallery key during a modal editor must not start another
+            # editor. Calling the same command directly also reuses that editor.
+            self.key('<F8>', app.canvas)
+            app.activate_command('thumbnail_edit')
+            app.update()
+            constructor.assert_not_called()
+            self.assertIs(app.thumbnail_editor_window, editor)
+        editor.close()
+        app.update()
+        self.assertEqual(app.canvas.canvasy(0), top)
+        self.assertEqual(app.selected_path, selected)
+        self.assertFalse(self.messages, self.messages)
 
     def test_settings_layout_at_large_font_in_both_languages(self):
         from localization import set_language
+        from preferences import PALETTES
 
         app = self.app
         app.commit_preferences('다크', app.settings['double_click'], '', '', app.recursive.get(),
                                typography=dict(family='', size=24))
-        for language in ('ko', 'en'):
-            with self.subTest(language=language):
+        for theme, language in ((theme, language) for theme in PALETTES
+                                for language in ('ko', 'en')):
+            with self.subTest(theme=theme, language=language):
+                app.settings['theme'] = theme
+                app.apply_theme()
                 app.settings['language'] = language
                 app.apply_language()
                 dialog = self.settings_dialog()
