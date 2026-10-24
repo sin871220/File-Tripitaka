@@ -5,13 +5,14 @@ from datetime import datetime
 from pathlib import Path
 import sys
 import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, font
+from tkinter import ttk, filedialog, messagebox, font, colorchooser
 from ui_fonts import configure_fonts, select_family
 from brand import APP_NAME, APP_VERSION
 from dialog_geometry import center_dialog
 from gallery_card import GalleryCard
 from thumbnail_overlays import (normalize_overlay_settings, normalize_overlay_order, OVERLAY_POSITIONS,
-                                POSITION_LABELS, OVERLAY_SIZES, SIZE_LABELS)
+                                POSITION_LABELS, OVERLAY_SIZES, SIZE_LABELS,
+                                PAGE_FONT_MIN, PAGE_FONT_MAX, PAGE_FONT_DEFAULT)
 from viewer import (ACTIONS, KEY_ACTIONS, CUSTOM_VIEWER_ACTION, DEFAULT_APP_ACTION,
                     HONEYVIEW_ACTION, available_actions, default_action,
                     normalize_action, is_viewer, launch_viewer, choose_viewer)
@@ -212,7 +213,16 @@ class Preferences:
                 display_values = {key: bool(display[key]) for key in ('show_filename', 'show_extension', 'show_size', 'show_date')}
             except (KeyError, TypeError):
                 raise ValueError('표시 설정을 확인해 주세요.')
-        overlay_values = normalize_overlay_settings(overlays) if overlays is not None else None
+        if isinstance(overlays, dict) and isinstance(overlays.get('pages'), dict):
+            alpha = overlays['pages'].get('background_alpha', 100)
+            if isinstance(alpha, bool) or not isinstance(alpha, int) or not 0 <= alpha <= 100:
+                raise ValueError('배경 알파는 0~100 사이의 정수로 입력해 주세요.')
+            if 'font_size' in overlays['pages']:
+                page_font = overlays['pages']['font_size']
+                if (isinstance(page_font, bool) or not isinstance(page_font, int)
+                        or not PAGE_FONT_MIN <= page_font <= PAGE_FONT_MAX):
+                    raise ValueError('페이지 글자 크기는 4~72 사이의 정수로 입력해 주세요.')
+        overlay_values = normalize_overlay_settings(overlays, ui_font_size=getattr(self, 'font_size', 10)) if overlays is not None else None
         ordered_overlays = normalize_overlay_order(overlay_order) if overlay_order is not None else None
         font_view = None
         previous_size = getattr(self, 'font_size', 10)
@@ -339,7 +349,7 @@ class Preferences:
         filename_changed()
         ttk.Separator(display_page).pack(fill='x', pady=(0, 12))
         ttk.Label(display_page, text=tr('썸네일 위 표시'), style='Heading.TLabel').pack(anchor='w', pady=(0, 10))
-        overlay_values = normalize_overlay_settings(self.settings.get('thumbnail_overlays'))
+        overlay_values = normalize_overlay_settings(self.settings.get('thumbnail_overlays'), ui_font_size=self.font_size)
         overlay_order = normalize_overlay_order(self.settings.get('thumbnail_overlay_order'))
         overlay_selected = tk.StringVar(dialog, value=overlay_order[0])
         overlay_visible = {key: tk.BooleanVar(dialog, value=value['visible'])
@@ -348,6 +358,14 @@ class Preferences:
                             for key, value in overlay_values.items()}
         overlay_size = {key: tk.StringVar(dialog, value=overlay_values[key].get('size', 'large'))
                         for key in ('favorite', 'folder')}
+        page_font_size = tk.StringVar(dialog, value=str(overlay_values['pages'].get('font_size', PAGE_FONT_DEFAULT)))
+        last_valid_page_font_size = [int(page_font_size.get())]
+        page_colors = {field: tk.StringVar(dialog, value=overlay_values['pages'].get(field, default))
+                       for field, default in (('text_color', '#FFFFFF'), ('background_color', '#242830'))}
+        page_alpha = tk.StringVar(dialog, value=str(overlay_values['pages'].get('background_alpha', 100)))
+        last_valid_page_alpha = [int(page_alpha.get())]
+        page_color_images = {}
+        page_color_buttons = {}
         dialog.settings_overlay_visible = overlay_visible
         dialog.settings_overlay_position = overlay_position
         dialog.settings_overlay_combos = {}
@@ -360,6 +378,10 @@ class Preferences:
         dialog.settings_overlay_labels = {}
         dialog.settings_overlay_checks = {}
         dialog.settings_overlay_handles = {}
+        dialog.settings_page_text_color = page_colors['text_color']
+        dialog.settings_page_background_color = page_colors['background_color']
+        dialog.settings_page_alpha = page_alpha
+        dialog.settings_page_font_size = page_font_size
         overlay_section = ttk.Frame(display_page)
         overlay_section.pack(fill='x')
         overlay_controls = ttk.Frame(overlay_section)
@@ -393,19 +415,51 @@ class Preferences:
                         pass
                 overlay_traces.clear()
                 overlay_drag.clear()
+                for button in page_color_buttons.values():
+                    try:
+                        button.configure(image='')
+                    except tk.TclError:
+                        pass
+                page_color_images.clear()
                 preview_card.destroy()
         dialog.bind('<Destroy>', dispose_preview, add='+')
-        def draft_overlays():
+        def read_page_alpha(strict=False):
+            try:
+                value = int(page_alpha.get().strip())
+                if not 0 <= value <= 100:
+                    raise ValueError
+            except (ValueError, tk.TclError):
+                if strict:
+                    raise ValueError('배경 알파는 0~100 사이의 정수로 입력해 주세요.')
+                return last_valid_page_alpha[0]
+            last_valid_page_alpha[0] = value
+            return value
+        def read_page_font_size(strict=False):
+            try:
+                value = int(page_font_size.get().strip())
+                if not PAGE_FONT_MIN <= value <= PAGE_FONT_MAX:
+                    raise ValueError
+            except (ValueError, tk.TclError):
+                if strict:
+                    raise ValueError('페이지 글자 크기는 4~72 사이의 정수로 입력해 주세요.')
+                return last_valid_page_font_size[0]
+            last_valid_page_font_size[0] = value
+            return value
+        def draft_overlays(strict=False):
             values = {key: dict(visible=overlay_visible[key].get(), position=overlay_position[key].get())
                       for key in overlay_values}
             for key, choice in overlay_size.items():
                 values[key]['size'] = choice.get()
+            values['pages'].update({field: variable.get() for field, variable in page_colors.items()})
+            values['pages']['background_alpha'] = read_page_alpha(strict)
+            values['pages']['font_size'] = read_page_font_size(strict)
             return values
         def update_overlay_preview(*_):
             if not preview_card.alive:
                 return
             preview_palette = PALETTES.get(theme.get(), self.palette)
-            preview_card.set_overlays(draft_overlays())
+            preview_overlays = normalize_overlay_settings(draft_overlays(), ui_font_size=self.font_size)
+            preview_card.set_overlays(preview_overlays)
             preview_card.set_overlay_order(overlay_order)
             preview_card.set_theme(preview_palette, (self.ui_font, min(self.font_size, 11)))
             preview_canvas.configure(bg=preview_palette['field'])
@@ -413,6 +467,16 @@ class Preferences:
                 choice.configure(state='readonly' if overlay_visible[key].get() else 'disabled')
             for key, choice in dialog.settings_overlay_size_controls.items():
                 choice.configure(state='readonly' if overlay_visible[key].get() else 'disabled')
+            page_state = ['!disabled'] if overlay_visible['pages'].get() else ['disabled']
+            for field, button in page_color_buttons.items():
+                color = preview_overlays['pages'].get(field, '#FFFFFF' if field == 'text_color' else '#242830')
+                button.configure(text=color)
+                page_color_images[field].put(color, to=(0, 0, 14, 14))
+                button.state(page_state)
+            if hasattr(dialog, 'settings_page_alpha_control'):
+                dialog.settings_page_alpha_control.state(page_state)
+            if hasattr(dialog, 'settings_page_font_size_control'):
+                dialog.settings_page_font_size_control.state(page_state)
         def start_overlay_drag(event, key):
             overlay_selected.set(key)
             overlay_drag.update(key=key, start_y=event.y_root, active=False)
@@ -475,12 +539,22 @@ class Preferences:
                 dialog.settings_overlay_size_controls[key] = size_combo
                 overlay_traces.append((overlay_size[key], overlay_size[key].trace_add('write', update_overlay_preview)))
             else:
-                ttk.Frame(row).grid(row=0, column=4, sticky='ew', padx=(6, 0))
+                page_font_row = ttk.Frame(row)
+                page_font_row.grid(row=0, column=4, sticky='ew', padx=(6, 0), pady=5)
+                page_font_control = ttk.Spinbox(page_font_row, from_=PAGE_FONT_MIN, to=PAGE_FONT_MAX,
+                                                increment=1, width=4, textvariable=page_font_size)
+                page_font_control.pack(side='left', fill='x', expand=True)
+                ttk.Label(page_font_row, text='pt').pack(side='left', padx=(4, 0))
+                page_font_control.bind('<FocusIn>', lambda event, key=key: overlay_selected.set(key), add='+')
+                page_font_control.bind('<Button-1>', lambda event, key=key: overlay_selected.set(key), add='+')
+                dialog.settings_page_font_size_control = page_font_control
             for variable in (overlay_visible[key], overlay_position[key]):
                 overlay_traces.append((variable, variable.trace_add('write', update_overlay_preview)))
         def align_overlay_columns():
             if dialog.winfo_exists():
-                width = max(choice.winfo_reqwidth() for choice in dialog.settings_overlay_size_controls.values()) + 6
+                widths = [choice.winfo_reqwidth() for choice in dialog.settings_overlay_size_controls.values()]
+                widths.append(dialog.settings_page_font_size_control.master.winfo_reqwidth())
+                width = max(widths) + 6
                 for row in dialog.settings_overlay_rows.values():
                     row.columnconfigure(4, minsize=width)
         dialog.after_idle(align_overlay_columns)
@@ -526,20 +600,67 @@ class Preferences:
             for row_number, key in enumerate(overlay_order):
                 dialog.settings_overlay_rows[key].grid_configure(row=row_number)
             overlay_selected.set(overlay_order[0])
-            for key, value in normalize_overlay_settings().items():
+            defaults = normalize_overlay_settings()
+            for key, value in defaults.items():
                 overlay_visible[key].set(value['visible'])
                 overlay_position[key].set(value['position'])
                 if key in overlay_size:
                     overlay_size[key].set(value.get('size', 'large'))
+            for field, variable in page_colors.items():
+                variable.set(defaults['pages'].get(field, '#FFFFFF' if field == 'text_color' else '#242830'))
+            page_alpha.set(str(defaults['pages'].get('background_alpha', 100)))
+            page_font_size.set(str(defaults['pages'].get('font_size', PAGE_FONT_DEFAULT)))
             update_overlay_preview()
         dialog.settings_reset_overlays = reset_overlays
         ttk.Button(order_buttons, text=tr('표시 기본값 복원'), command=reset_overlays).pack(side='left')
         ttk.Label(overlay_controls, text=tr('손잡이나 항목 이름을 드래그하거나 위로·아래로 버튼으로 순서를 바꾸세요. 같은 위치에서는 목록의 위에서 아래 순서로 표시합니다.'),
                   style='Muted.TLabel', wraplength=385).grid(row=4, column=0, sticky='w', pady=(3, 0))
-        ttk.Label(overlay_controls, text=tr('크기: 크게 100% · 보통 2/3 · 작게 1/2'),
+        ttk.Label(overlay_controls, text=tr('아이콘 크기: 크게 100% · 보통 2/3 · 작게 1/2. 페이지 수는 pt로 설정합니다.'),
                   style='Muted.TLabel', wraplength=385).grid(row=5, column=0, sticky='w', pady=(5, 0))
         ttk.Label(display_page, text=tr('별은 즐겨찾기 탭에서 숨깁니다. 페이지 수는 전체 이미지 수이며, 폴더는 바로 안의 이미지만 셉니다.'),
                   wraplength=630, style='Muted.TLabel').pack(anchor='w', pady=(10, 0))
+        page_style_controls = ttk.Frame(display_page)
+        page_style_controls.pack(fill='x', pady=(10, 0))
+        def choose_page_color(field):
+            if field not in page_colors or not overlay_visible['pages'].get():
+                return
+            title = '페이지 글씨 색 선택' if field == 'text_color' else '페이지 배경 색 선택'
+            result = colorchooser.askcolor(color=page_colors[field].get(), title=tr(title), parent=dialog)
+            color = result[1] if result and len(result) > 1 else None
+            if (isinstance(color, str) and len(color) == 7 and color.startswith('#')
+                    and all(character in '0123456789abcdefABCDEF' for character in color[1:])):
+                page_colors[field].set(color.upper())
+        dialog.settings_choose_page_color = choose_page_color
+        for column, (field, label) in enumerate((('text_color', '페이지 글씨 색'),
+                                                  ('background_color', '페이지 배경 색'))):
+            group = ttk.Frame(page_style_controls)
+            group.grid(row=0, column=column, sticky='ew', padx=(0, 12))
+            page_style_controls.columnconfigure(column, weight=1, uniform='page-style-controls')
+            ttk.Label(group, text=tr(label)).pack(anchor='w', pady=(0, 4))
+            swatch = tk.PhotoImage(master=dialog, width=14, height=14)
+            swatch.put(page_colors[field].get(), to=(0, 0, 14, 14))
+            page_color_images[field] = swatch
+            button = ttk.Button(group, text=page_colors[field].get(), image=swatch, compound='left',
+                                command=lambda field=field: choose_page_color(field))
+            button.pack(fill='x')
+            page_color_buttons[field] = button
+        dialog.settings_page_text_color_button = page_color_buttons['text_color']
+        dialog.settings_page_background_color_button = page_color_buttons['background_color']
+        alpha_group = ttk.Frame(page_style_controls)
+        alpha_group.grid(row=0, column=2, sticky='ew')
+        page_style_controls.columnconfigure(2, weight=1, uniform='page-style-controls')
+        ttk.Label(alpha_group, text=tr('배경 알파')).pack(anchor='w', pady=(0, 4))
+        alpha_entry = ttk.Frame(alpha_group)
+        alpha_entry.pack(fill='x')
+        alpha_control = ttk.Spinbox(alpha_entry, from_=0, to=100, increment=1, width=5,
+                                    textvariable=page_alpha)
+        alpha_control.pack(side='left', fill='x', expand=True)
+        ttk.Label(alpha_entry, text='%').pack(side='left', padx=(5, 0))
+        dialog.settings_page_alpha_control = alpha_control
+        ttk.Label(display_page, text=tr('배경 알파: 0%는 투명, 100%는 불투명입니다.'),
+                  style='Muted.TLabel', wraplength=630).pack(anchor='w', pady=(6, 0))
+        for variable in (*page_colors.values(), page_alpha, page_font_size):
+            overlay_traces.append((variable, variable.trace_add('write', update_overlay_preview)))
         overlay_traces.append((theme, theme.trace_add('write', update_overlay_preview)))
         update_order_controls()
         update_overlay_preview()
@@ -747,7 +868,7 @@ class Preferences:
                 self.commit_preferences(theme.get(), action.get(), honey.get().strip(), custom.get().strip(), recursive.get(), {key: value.get() for key, value in display.items()},
                                         dict(family='' if family_choice.get() == automatic_font else family_choice.get(), size=size_choice.get()),
                                         language=next(code for code, label in LANGUAGES.items() if label == language.get()),
-                                        shortcuts=draft_shortcuts(), overlays=draft_overlays(), overlay_order=overlay_order)
+                                        shortcuts=draft_shortcuts(), overlays=draft_overlays(strict=True), overlay_order=overlay_order)
             except ValueError as exc:
                 messagebox.showerror(tr('설정 확인'), tr(str(exc)), parent=dialog)
                 return

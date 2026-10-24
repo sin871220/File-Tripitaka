@@ -65,7 +65,13 @@ with tempfile.TemporaryDirectory() as tmp:
                for card in app.cards.values())
     assert translate('미리보기 불가\n압축파일에 지원하는 이미지가 없습니다.') == 'Preview unavailable\nNo supported images in this archive.'
     sorter = app.sort_control
-    assert tuple(sorter.cget('values')) == ('Name ▲', 'Name ▼', 'Modified ▲', 'Modified ▼')
+    assert tuple(sorter.cget('values')) == ('Name ▲', 'Name ▼', 'Modified ▲', 'Modified ▼',
+                                           'Size ▲', 'Size ▼')
+    for display, stable in (('Size ▲', '용량 오름차순'), ('Size ▼', '용량 내림차순')):
+        sorter.set(display)
+        sorter.event_generate('<<ComboboxSelected>>')
+        app.update()
+        assert app.sort_order.get() == stable
     sorter.set('Name ▼')
     sorter.event_generate('<<ComboboxSelected>>')
     app.update()
@@ -95,7 +101,16 @@ with tempfile.TemporaryDirectory() as tmp:
     assert app.settings['language'] == 'ko'
     assert app.sort_order.get() == '이름 내림차순'
     assert app.sort_control.get() == '이름 ▼'
-    assert tuple(app.sort_control.cget('values')) == ('이름 ▲', '이름 ▼', '수정 날짜 ▲', '수정 날짜 ▼')
+    assert tuple(app.sort_control.cget('values')) == ('이름 ▲', '이름 ▼', '수정 날짜 ▲', '수정 날짜 ▼',
+                                                    '용량 ▲', '용량 ▼')
+    for display, stable in (('용량 ▲', '용량 오름차순'), ('용량 ▼', '용량 내림차순')):
+        app.sort_control.set(display)
+        app.sort_control.event_generate('<<ComboboxSelected>>')
+        app.update()
+        assert app.sort_order.get() == stable
+    app.sort_control.set('이름 ▼')
+    app.sort_control.event_generate('<<ComboboxSelected>>')
+    app.update()
     assert app.group_order.get() == '폴더 먼저'
     assert app.group_control.get() == '폴더 먼저'
     app.settings['language'] = 'en'

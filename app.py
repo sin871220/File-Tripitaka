@@ -31,7 +31,7 @@ from preferences import Preferences, detect_honeyview, card_text
 from viewer import (default_action, normalize_action, launch_default, choose_viewer as select_viewer,
                     REVEAL_ACTION, HONEYVIEW_ACTION, DEFAULT_APP_ACTION, CUSTOM_VIEWER_ACTION)
 from archive_core import ARCHIVES, cover, render_edited_cover, natural, visible_indices, sort_archives, image_entries
-from library_items import KIND_FILTERS, ARRANGEMENTS, SORT_LABELS, scan_items, item_metadata, filter_items, sort_items
+from library_items import KIND_FILTERS, ARRANGEMENTS, SORT_LABELS, scan_items, item_metadata, filter_items, sort_items, normalize_sort_order
 from file_operations import FileOperationError, rename_archive, trash_archive
 from dialog_geometry import center_dialog, _workarea
 from thumbnail_edits import (ThumbnailEditStore, ThumbnailEditDatabaseError,
@@ -78,7 +78,8 @@ class App(Preferences, tk.Tk):
             self.settings = json.loads(CONFIG.read_text('utf-8'))
         except (OSError, ValueError):
             self.settings = {}
-        self.settings['thumbnail_overlays'] = normalize_overlay_settings(self.settings.get('thumbnail_overlays'))
+        self.settings['thumbnail_overlays'] = normalize_overlay_settings(
+            self.settings.get('thumbnail_overlays'), ui_font_size=self.settings.get('font_size', 10))
         self.settings['thumbnail_overlay_order'] = normalize_overlay_order(self.settings.get('thumbnail_overlay_order'))
         set_language(self.settings.get('language', 'ko'))
         self.font_size = max(8, min(24, int(self.settings.get('font_size', 10))))
@@ -135,7 +136,7 @@ class App(Preferences, tk.Tk):
         self.group_order = tk.StringVar(value=group_order if group_order in ARRANGEMENTS else '섞어서')
         self.only_favorites = tk.BooleanVar(value=self.settings.get('only_favorites', False))
         self.thumb_size = tk.IntVar(value=max(120, min(320, int(self.settings.get('thumb_size', 190)))))
-        self.sort_order = tk.StringVar(value=self.settings.get('sort', '이름 오름차순'))
+        self.sort_order = tk.StringVar(value=normalize_sort_order(self.settings.get('sort')))
         self.fit_columns = None
         self.display_size = self.thumb_size.get()
         self.preview_count = tk.StringVar(value=str(self.settings.get('preview_count', 1)) + '장')
@@ -559,7 +560,7 @@ class App(Preferences, tk.Tk):
         view = self.tab_views.get('__global_favorites__' if target == 'favorites' else self.current_folder, {}).get(target, {})
         if view:
             self.query.set(view.get('query', ''))
-            self.sort_order.set(view.get('sort', self.sort_order.get()))
+            self.sort_order.set(normalize_sort_order(view.get('sort', self.sort_order.get())))
             self.kind_filter.set(view.get('kind_filter', self.kind_filter.get()))
             group_order = view.get('group_order', '섞어서')
             self.group_order.set(group_order if group_order in ARRANGEMENTS else '섞어서')
@@ -815,7 +816,8 @@ class App(Preferences, tk.Tk):
         top = max(0, self.canvas.canvasy(0))
         self.filtered = sort_items(
             filter_items(candidates, self.query.get(), self.kind_filter.get(), self.item_kinds),
-            self.sort_order.get(), self.modified, self.item_kinds, self.group_order.get())
+            self.sort_order.get(), self.modified, self.item_kinds, self.group_order.get(),
+            metadata=self.metadata)
         indices = {path: index for index, path in enumerate(self.filtered)}
         retained = {}
         for card in self.cards.values():
@@ -1324,7 +1326,8 @@ class App(Preferences, tk.Tk):
         candidates = [Path(p) for p in self.favorites] if self.only_favorites.get() else self.files
         self.filtered = sort_items(
             filter_items(candidates, self.query.get(), self.kind_filter.get(), self.item_kinds),
-            self.sort_order.get(), self.modified, self.item_kinds, self.group_order.get())
+            self.sort_order.get(), self.modified, self.item_kinds, self.group_order.get(),
+            metadata=self.metadata)
         self.generation += 1
         self.pending.clear()
         for _, frame, _, window in self.cards.values():
@@ -1353,7 +1356,7 @@ class App(Preferences, tk.Tk):
             if self.search_job is not None:
                 self.after_cancel(self.search_job)
                 self.search_job = None
-            self.sort_order.set(restore.get('sort', self.sort_order.get()))
+            self.sort_order.set(normalize_sort_order(restore.get('sort', self.sort_order.get())))
             self.kind_filter.set(restore.get('kind_filter', self.kind_filter.get()))
             group_order = restore.get('group_order', '섞어서')
             self.group_order.set(group_order if group_order in ARRANGEMENTS else '섞어서')

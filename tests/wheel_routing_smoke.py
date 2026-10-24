@@ -106,10 +106,8 @@ class WheelRoutingSmoke(unittest.TestCase):
             return self.app.wheel(SimpleNamespace(widget=self.app.canvas, delta=-120, num=None))
 
     def main_combos(self):
-        combos = [widget for widget in descendants(self.app) if isinstance(widget, module.ttk.Combobox)]
-        # Localization intentionally wraps each displayed variable in another
-        # StringVar, so match the stable widget structure rather than Tcl IDs.
-        sorter = next(widget for widget in combos if len(widget.cget('values')) == 4)
+        # The sort list grows independently of its stable widget reference.
+        sorter = self.app.sort_control
         count = next(widget for widget in self.app.thumbnail_controls.winfo_children()
                      if isinstance(widget, module.ttk.Combobox)
                      and int(widget.grid_info()['column']) == 4)

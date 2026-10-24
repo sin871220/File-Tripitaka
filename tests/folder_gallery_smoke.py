@@ -186,7 +186,8 @@ class FolderGallerySmoke(unittest.TestCase):
         self.assertEqual(app.group_order.get(), '섞어서', 'Old settings must default to mixed')
         self.assertEqual(tuple(app.group_control.cget('values')), ('섞어서', '폴더 먼저', '파일 먼저'))
         self.assertEqual(tuple(app.sort_control.cget('values')),
-                         ('이름 ▲', '이름 ▼', '수정 날짜 ▲', '수정 날짜 ▼'))
+                         ('이름 ▲', '이름 ▼', '수정 날짜 ▲', '수정 날짜 ▼',
+                          '용량 ▲', '용량 ▼'))
         # Interleaved times make mixed date ordering observably different from
         # either partition, and equal times exercise stable name tie-breaking.
         for index, path in enumerate(app.files):
@@ -202,6 +203,66 @@ class FolderGallerySmoke(unittest.TestCase):
                     self.assertEqual(app.group_order.get(), arrangement)
                     self.assert_arrangement(arrangement)
                     self.assertEqual(set(app.filtered), set(self.folders + self.archives))
+
+    def test_size_sort_uses_all_item_sizes_and_keeps_folder_partition_direction(self):
+        app = self.app
+        for display, model, descending in (('용량 ▲', '용량 오름차순', False),
+                                            ('용량 ▼', '용량 내림차순', True)):
+            self.set_sort(display)
+            self.assertEqual(app.sort_order.get(), model)
+            for arrangement in ('섞어서', '폴더 먼저', '파일 먼저'):
+                with self.subTest(sort=display, arrangement=arrangement):
+                    self.set_group(arrangement)
+                    self.assertEqual(set(app.filtered), set(self.folders + self.archives))
+                    if arrangement == '섞어서':
+                        groups = [app.filtered]
+                    else:
+                        folders = [path for path in app.filtered if app.item_kinds[path] == 'folder']
+                        archives = [path for path in app.filtered if app.item_kinds[path] == 'archive']
+                        self.assertEqual(app.filtered, folders + archives if arrangement == '폴더 먼저'
+                                         else archives + folders)
+                        groups = [folders, archives]
+                    for group in groups:
+                        sizes = [app.metadata[path][0] for path in group]
+                        self.assertEqual(sizes, sorted(sizes, reverse=descending))
+        for attribute in ('page_count_pool', 'page_count_cache', 'page_count_job'):
+            self.assertFalse(hasattr(app, attribute), 'Size sorting must not add all-library page counting')
+
+    def test_retired_page_sort_preferences_restore_to_name_sort_in_all_tabs(self):
+        app = self.app
+        app.close()
+        for pool in (app.pool, app.folder_pool, app.thumbnail_edit_pool):
+            pool.shutdown(wait=True, cancel_futures=True)
+        saved = json.loads(module.CONFIG.read_text('utf-8'))
+        folder = str(self.library)
+        saved['sort'] = '페이지 수 내림차순'
+        saved['only_favorites'] = False
+        saved['file_favorites'] = [str(self.folders[0]), str(self.archives[0])]
+        saved['folder_item_favorites'] = [str(self.folders[0])]
+        saved.setdefault('views', {})[folder] = {'sort': '페이지 수 오름차순'}
+        saved.setdefault('tab_views', {})[folder] = {'all': {'sort': '페이지 수 내림차순'}}
+        saved['tab_views']['__global_favorites__'] = {
+            'favorites': {'sort': '페이지 수 오름차순', 'kind_filter': '전체',
+                          'group_order': '섞어서', 'query': ''}}
+        module.CONFIG.write_text(json.dumps(saved, ensure_ascii=False), 'utf-8')
+        self.app = app = self.make_app()
+        self.wait_for(lambda: bool(app.files))
+        self.settle()
+        choices = ('이름 ▲', '이름 ▼', '수정 날짜 ▲', '수정 날짜 ▼', '용량 ▲', '용량 ▼')
+        self.assertEqual(tuple(app.sort_control.cget('values')), choices)
+        self.assertEqual(app.sort_order.get(), '이름 오름차순')
+        self.assertEqual(app.sort_control.get(), '이름 ▲')
+        self.assertEqual(app.filtered, module.sort_archives(app.files, '이름 오름차순', app.modified))
+        self.tab(1)
+        self.assertEqual(app.sort_order.get(), '이름 오름차순')
+        self.assertEqual(app.sort_control.get(), '이름 ▲')
+        self.assertEqual(set(app.filtered), {self.folders[0], self.archives[0]})
+        self.tab(0)
+        self.assertEqual(app.sort_order.get(), '이름 오름차순')
+        for attribute in ('page_count_pool', 'page_count_cache', 'page_count_job'):
+            self.assertFalse(hasattr(app, attribute))
+        app.save()
+        self.assertEqual(json.loads(module.CONFIG.read_text('utf-8'))['sort'], '이름 오름차순')
 
     def test_group_order_survives_favorite_reconciliation_and_single_kind_filters(self):
         app = self.app

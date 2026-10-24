@@ -142,6 +142,21 @@ class OverlaySettingsSmoke(unittest.TestCase):
             combo.event_generate('<<ComboboxSelected>>')
             self.assertEqual(dialog.settings_overlay_size[kind].get(), size)
             self.assertEqual(dialog.settings_overlay_preview.overlays[kind]['size'], size)
+        font_control = dialog.settings_page_font_size_control
+        self.assertEqual((float(font_control.cget('from')), float(font_control.cget('to'))), (4, 72))
+        font_control.delete(0, 'end')
+        font_control.insert(0, '18')
+        font_control.event_generate('<FocusOut>')
+        app.update()
+        self.assertEqual(dialog.settings_page_font_size.get(), '18')
+        self.assertEqual(dialog.settings_overlay_preview._page_font.actual('size'), 18)
+        page_style = {'font_size': 18, 'text_color': '#123456',
+                      'background_color': '#A0B0C0', 'background_alpha': 40}
+        dialog.settings_page_text_color.set(page_style['text_color'])
+        dialog.settings_page_background_color.set(page_style['background_color'])
+        dialog.settings_page_alpha.set(str(page_style['background_alpha']))
+        for field, value in page_style.items():
+            self.assertEqual(dialog.settings_overlay_preview.overlays['pages'][field], value)
         for kind in OVERLAY_ORDER:
             combo = dialog.settings_overlay_controls[kind]
             combo.set(POSITION_LABELS['bottom_left'])
@@ -154,6 +169,12 @@ class OverlaySettingsSmoke(unittest.TestCase):
         self.assertEqual(dialog.settings_overlay_order, order)
         dialog.settings_overlay_visible['pages'].set(False)
         self.assertTrue(dialog.settings_overlay_controls['pages'].instate(['disabled']))
+        self.assertTrue(dialog.settings_page_font_size_control.instate(['disabled']))
+        for control in (dialog.settings_page_text_color_button, dialog.settings_page_background_color_button,
+                        dialog.settings_page_alpha_control):
+            self.assertTrue(control.instate(['disabled']))
+        self.assertEqual(dialog.settings_page_alpha.get(), '40')
+        self.assertEqual(dialog.settings_page_font_size.get(), '18')
         dialog.settings_apply()
         app.update()
         self.assertEqual(app.cards, before)
@@ -162,6 +183,9 @@ class OverlaySettingsSmoke(unittest.TestCase):
         self.assertTrue(all(card.overlays['favorite']['size'] == 'medium'
                             and card.overlays['folder']['size'] == 'small'
                             for _, card, _, _ in app.cards.values()))
+        self.assertTrue(all(all(card.overlays['pages'][field] == value for field, value in page_style.items())
+                            for _, card, _, _ in app.cards.values()))
+        self.assertTrue(all(card._page_font.actual('size') == 18 for _, card, _, _ in app.cards.values()))
         self.assertTrue(all(app.canvas.itemcget(card.page_item, 'state') == 'hidden'
                             for _, card, _, _ in app.cards.values()))
         saved = json.loads(module.CONFIG.read_text('utf-8'))['thumbnail_overlays']
@@ -169,17 +193,27 @@ class OverlaySettingsSmoke(unittest.TestCase):
         self.assertFalse(saved['pages']['visible'])
         self.assertEqual(saved['favorite']['size'], 'medium')
         self.assertEqual(saved['folder']['size'], 'small')
+        for field, value in page_style.items():
+            self.assertEqual(saved['pages'][field], value)
         self.assertNotIn('size', saved['pages'])
         self.assertTrue(all(value['position'] == 'bottom_left' for value in saved.values()))
         app.close()
         for pool in (app.pool, app.folder_pool, app.thumbnail_edit_pool):
             pool.shutdown(wait=True, cancel_futures=True)
         self.app = self.make_app()
-        self.wait(lambda: self.app.active == 0 and not self.app.pending)
+        self.wait(lambda: bool(self.app.cards) and self.app.active == 0 and not self.app.pending)
         self.assertEqual(self.app.settings['thumbnail_overlays'], saved)
         self.assertEqual(self.app.settings['thumbnail_overlay_order'], order)
         self.assertTrue(all(card.overlays == saved for _, card, _, _ in self.app.cards.values()))
         self.assertTrue(all(card.overlay_order == order for _, card, _, _ in self.app.cards.values()))
+        self.app.commit_preferences(self.app.settings.get('theme', '라이트'), self.app.settings['double_click'],
+                                    self.app.settings.get('viewer', ''), self.app.settings.get('custom_viewer', ''),
+                                    self.app.recursive.get(), typography={'family': '', 'size': 24})
+        self.app.update()
+        self.settle()
+        self.assertEqual(self.app.font_size, 24)
+        self.assertEqual(self.app.settings['thumbnail_overlays']['pages']['font_size'], 18)
+        self.assertTrue(all(card._page_font.actual('size') == 18 for _, card, _, _ in self.app.cards.values()))
 
     def test_real_selection_and_move_buttons_keep_row_values_and_preview_order(self):
         app = self.app
@@ -318,6 +352,58 @@ class OverlaySettingsSmoke(unittest.TestCase):
         dialog.destroy()
         self.assertEqual(app.settings['thumbnail_overlay_order'], list(OVERLAY_ORDER))
 
+    def test_page_color_chooser_cancel_and_invalid_numeric_fields_never_save_draft(self):
+        app = self.app
+        original = json.loads(json.dumps(app.settings['thumbnail_overlays']))
+        app.open_settings()
+        dialog = app.settings_window
+        dialog.settings_tabs.select(1)
+        app.update()
+        with patch('preferences.colorchooser.askcolor', return_value=((18, 52, 86), '#123456')) as chooser:
+            dialog.settings_choose_page_color('text_color')
+            chooser.assert_called_once()
+        self.assertEqual(dialog.settings_page_text_color.get(), '#123456')
+        with patch('preferences.colorchooser.askcolor', return_value=((160, 176, 192), '#A0B0C0')) as chooser:
+            dialog.settings_choose_page_color('background_color')
+            chooser.assert_called_once()
+        self.assertEqual(dialog.settings_page_background_color.get(), '#A0B0C0')
+        with patch('preferences.colorchooser.askcolor', return_value=(None, None)) as chooser:
+            dialog.settings_choose_page_color('text_color')
+            chooser.assert_called_once()
+        self.assertEqual(dialog.settings_page_text_color.get(), '#123456')
+        preview = dialog.settings_overlay_preview
+        self.assertEqual(preview.overlays['pages']['text_color'], '#123456')
+        self.assertEqual(preview.overlays['pages']['background_color'], '#A0B0C0')
+        for alpha in ('', '101', 'invalid'):
+            with self.subTest(alpha=alpha):
+                dialog.settings_page_alpha.set(alpha)
+                app.update()
+                self.assertFalse(self.errors, self.errors)
+                dialog.settings_apply()
+                self.assertTrue(dialog.winfo_exists())
+                self.assertEqual(len(self.messages), 1, 'An invalid percentage must produce one validation message')
+                self.messages.clear()  # The fixture rejects only unexpected error dialogs.
+                self.assertEqual(app.settings['thumbnail_overlays'], original)
+        dialog.settings_page_alpha.set('40')
+        app.update()
+        self.assertEqual(preview.overlays['pages']['background_alpha'], 40)
+        for size in ('', '3', '73', 'invalid'):
+            with self.subTest(font_size=size):
+                dialog.settings_page_font_size.set(size)
+                app.update()
+                self.assertFalse(self.errors, self.errors)
+                dialog.settings_apply()
+                self.assertTrue(dialog.winfo_exists())
+                self.assertEqual(len(self.messages), 1, 'An invalid point size must produce one validation message')
+                self.messages.clear()
+                self.assertEqual(app.settings['thumbnail_overlays'], original)
+        dialog.settings_page_font_size.set('18')
+        app.update()
+        self.assertEqual(preview.overlays['pages']['font_size'], 18)
+        self.assertEqual(preview._page_font.actual('size'), 18)
+        dialog.destroy()
+        self.assertEqual(app.settings['thumbnail_overlays'], original)
+
     def test_draft_preview_cancel_reset_and_localized_compact_settings(self):
         app = self.app
         original = app.settings['thumbnail_overlays']
@@ -338,6 +424,11 @@ class OverlaySettingsSmoke(unittest.TestCase):
                 combo.set(SIZE_LABELS[size])
                 combo.event_generate('<<ComboboxSelected>>')
                 self.assertEqual(preview.overlays[kind]['size'], size)
+            dialog.settings_page_font_size.set('18')
+            self.assertEqual(preview.overlays['pages']['font_size'], 18)
+            dialog.settings_page_text_color.set('#123456')
+            dialog.settings_page_background_color.set('#A0B0C0')
+            dialog.settings_page_alpha.set('40')
             dialog.settings_overlay_visible['folder'].set(False)
             self.assertEqual(preview.canvas.itemcget(preview.folder_item, 'state'), 'hidden')
             self.assertTrue(dialog.settings_overlay_size_controls['folder'].instate(['disabled']))
@@ -347,6 +438,11 @@ class OverlaySettingsSmoke(unittest.TestCase):
             self.assertTrue(all(variable.get() == 'large' for variable in dialog.settings_overlay_size.values()))
             self.assertTrue(all(not combo.instate(['disabled'])
                                 for combo in dialog.settings_overlay_size_controls.values()))
+            self.assertEqual(dialog.settings_page_text_color.get(), DEFAULT_OVERLAYS['pages']['text_color'])
+            self.assertEqual(dialog.settings_page_background_color.get(), DEFAULT_OVERLAYS['pages']['background_color'])
+            self.assertEqual(dialog.settings_page_alpha.get(), str(DEFAULT_OVERLAYS['pages']['background_alpha']))
+            self.assertEqual(dialog.settings_page_font_size.get(), '10')
+            self.assertEqual(preview._page_font.actual('size'), 10)
             for kind, combo in dialog.settings_overlay_controls.items():
                 self.assertEqual(tuple(combo.cget('values')), tuple(POSITION_LABELS.values()))
                 self.assertLessEqual(combo.winfo_rooty() + combo.winfo_height(), dialog.winfo_rooty() + dialog.winfo_height())
@@ -372,6 +468,8 @@ class OverlaySettingsSmoke(unittest.TestCase):
             combo.event_generate('<<ComboboxSelected>>')
             self.assertEqual(dialog.settings_overlay_size[kind].get(), size)
             self.assertEqual(dialog.settings_overlay_preview.overlays[kind]['size'], size)
+        dialog.settings_page_font_size.set('18')
+        self.assertEqual(dialog.settings_overlay_preview.overlays['pages']['font_size'], 18)
         dialog.settings_overlay_controls['pages'].set('Top right')
         dialog.settings_overlay_controls['pages'].event_generate('<<ComboboxSelected>>')
         self.assertEqual(dialog.settings_overlay_position['pages'].get(), 'top_right')
@@ -379,6 +477,7 @@ class OverlaySettingsSmoke(unittest.TestCase):
         self.assertEqual(app.settings['thumbnail_overlays']['pages']['position'], 'top_right')
         self.assertEqual(app.settings['thumbnail_overlays']['favorite']['size'], 'medium')
         self.assertEqual(app.settings['thumbnail_overlays']['folder']['size'], 'small')
+        self.assertEqual(app.settings['thumbnail_overlays']['pages']['font_size'], 18)
 
 
 if __name__ == '__main__':

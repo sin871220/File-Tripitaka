@@ -10,9 +10,10 @@ from tkinter import TclError
 from tkinter import font as tkfont
 import weakref
 
-from PIL import Image, ImageTk
+from PIL import Image, ImageDraw, ImageTk
 
-from thumbnail_overlays import SIZE_SCALES, normalize_overlay_order, normalize_overlay_settings
+from thumbnail_overlays import (PAGE_FONT_DEFAULT, SIZE_SCALES,
+                                normalize_overlay_order, normalize_overlay_settings)
 
 
 _card_ids = count()
@@ -103,7 +104,7 @@ class GalleryCard:
         self.favorite = False
         self.folder = False
         self.page_count = None
-        self.overlays = normalize_overlay_settings()
+        self.overlays = normalize_overlay_settings(ui_font_size=self.font[1])
         self.overlay_order = normalize_overlay_order()
         self.name = ''
         self.details = ''
@@ -112,7 +113,9 @@ class GalleryCard:
         self._badge_font = tkfont.Font(root=canvas, family=self.font[0],
                                       size=max(17, abs(int(self.font[1])) + 4), weight='bold')
         self._page_font = tkfont.Font(root=canvas, family=self.font[0],
-                                     size=max(10, abs(int(self.font[1]))), weight='bold')
+                                     size=PAGE_FONT_DEFAULT, weight='bold')
+        self._page_background_photo = None
+        self._page_background_key = None
         self.background = canvas.create_rectangle(0, 0, 0, 0, tags=(self.tag,))
         self._image_item = canvas.create_image(0, 0, anchor='center', state='hidden', tags=(self.tag,))
         self._placeholder_item = canvas.create_text(0, 0, anchor='n', justify='center',
@@ -128,9 +131,10 @@ class GalleryCard:
         # virtual gallery's canvas items or its existing event bindings.
         self.folder_item = canvas.create_polygon(0, 0, 0, 0, 0, 0,
                                                   state='hidden', tags=(self.tag,))
-        self.page_background_item = canvas.create_polygon(0, 0, 0, 0, 0, 0,
-                                                          smooth=True, splinesteps=12,
-                                                          state='hidden', tags=(self.tag,))
+        # A real RGBA photo lets Tk composite the pill over the actual cover,
+        # including its transparent/letterboxed portions, on every paint pass.
+        self.page_background_item = canvas.create_image(0, 0, anchor='nw',
+                                                       state='hidden', tags=(self.tag,))
         self.page_item = canvas.create_text(0, 0, anchor='nw', state='hidden',
                                             tags=(self.tag,))
         self.thumbnail = CardThumbnail(self)
@@ -149,13 +153,39 @@ class GalleryCard:
         self.canvas.itemconfigure(self.badge_item, fill='#FFD21F', font=self._badge_font)
         self.canvas.itemconfigure(self.folder_item, fill='#F3C65D',
                                   outline=p['border'], width=1)
-        self.canvas.itemconfigure(self.page_background_item, fill='#242830', outline='')
-        self.canvas.itemconfigure(self.page_item, fill='#FFFFFF', font=self._page_font)
+        self.canvas.itemconfigure(self.page_item,
+                                  fill=self.overlays['pages'].get('text_color', '#FFFFFF'),
+                                  font=self._page_font)
 
     def _apply_badge_font(self):
         base_size = max(17, abs(int(self.font[1])) + 4)
         scale = SIZE_SCALES[self.overlays['favorite']['size']]
         self._badge_font.configure(family=self.font[0], size=max(1, int(base_size * scale + .5)))
+
+    def _apply_page_font(self):
+        self._page_font.configure(family=self.font[0],
+                                  size=self.overlays['pages'].get('font_size', PAGE_FONT_DEFAULT))
+
+    def _render_page_background(self, width, height, radius):
+        """Reuse a tiny true-alpha sprite until its pixels actually change."""
+        options = self.overlays['pages']
+        color = options.get('background_color', '#242830')
+        alpha = max(0, min(255, int(options.get('background_alpha', 100) * 255 / 100 + .5)))
+        width, height = max(1, int(width)), max(1, int(height))
+        key = (width, height, radius, color, alpha)
+        if key != self._page_background_key or self._page_background_photo is None:
+            rgb = tuple(int(color[index:index + 2], 16) for index in (1, 3, 5))
+            # Supersampling keeps the rounded edges smooth even at half size.
+            image = Image.new('RGBA', (width * 3, height * 3), (0, 0, 0, 0))
+            ImageDraw.Draw(image).rounded_rectangle((0, 0, width * 3 - 1, height * 3 - 1),
+                                                     radius=radius * 3, fill=(*rgb, alpha))
+            image = image.resize((width, height), Image.Resampling.LANCZOS)
+            if alpha < 255:
+                image.putalpha(image.getchannel('A').point(lambda value: min(alpha, value)))
+            self._page_background_photo = ImageTk.PhotoImage(image, master=self.canvas)
+            self._page_background_key = key
+        self.canvas.itemconfigure(self.page_background_item, image=self._page_background_photo,
+                                  state='normal')
 
     def layout(self, x, y, width, height):
         if not self.alive:
@@ -303,6 +333,9 @@ class GalleryCard:
         active = {'favorite': self.favorite, 'folder': self.folder,
                   'pages': self.page_count is not None}
         dimensions = {}
+        page_scale = self.overlays['pages'].get('font_size', PAGE_FONT_DEFAULT) / PAGE_FONT_DEFAULT
+        page_padding = (max(1, int(8 * page_scale + .5)),
+                        max(1, int(4 * page_scale + .5)))
         for kind, item in (('favorite', self.badge_item), ('pages', self.page_item)):
             if not active[kind] or not self.overlays[kind]['visible']:
                 continue
@@ -313,7 +346,7 @@ class GalleryCard:
             box = c.bbox(item)
             c.itemconfigure(item, state='hidden')
             if box is not None:
-                pad_x, pad_y = (8, 4) if kind == 'pages' else (0, 0)
+                pad_x, pad_y = page_padding if kind == 'pages' else (0, 0)
                 dimensions[kind] = (box[2] - box[0] + pad_x * 2,
                                     box[3] - box[1] + pad_y * 2)
         if self.folder and self.overlays['folder']['visible']:
@@ -386,14 +419,11 @@ class GalleryCard:
                 c.itemconfigure(self.folder_item, state='normal')
                 c.tag_raise(self.folder_item)
             else:
-                radius = min(10, (y2 - y1) / 2)
-                c.coords(self.page_background_item,
-                         x1 + radius, y1, x2 - radius, y1, x2, y1, x2, y1 + radius,
-                         x2, y2 - radius, x2, y2, x2 - radius, y2, x1 + radius, y2,
-                         x1, y2, x1, y2 - radius, x1, y1 + radius, x1, y1)
-                c.itemconfigure(self.page_background_item, state='normal')
+                radius = min(max(1, int(10 * page_scale + .5)), (y2 - y1) / 2)
+                self._render_page_background(x2 - x1, y2 - y1, radius)
+                c.coords(self.page_background_item, x1, y1)
                 c.tag_raise(self.page_background_item)
-                place_text(self.page_item, x1 + 8, y1 + 4)
+                place_text(self.page_item, x1 + page_padding[0], y1 + page_padding[1])
                 c.tag_raise(self.page_item)
 
     def set_theme(self, palette, font):
@@ -408,7 +438,7 @@ class GalleryCard:
         if font_changed:
             self._font.configure(family=font[0], size=font[1])
             self._apply_badge_font()
-            self._page_font.configure(family=font[0], size=max(10, abs(int(font[1]))))
+            self._apply_page_font()
         self._apply_colors()
         if font_changed:
             self._layout_content()
@@ -442,12 +472,19 @@ class GalleryCard:
             self._render_folder()
 
     def set_overlays(self, options):
-        options = normalize_overlay_settings(options)
+        options = normalize_overlay_settings(options, ui_font_size=self.font[1])
         if self.alive and self.overlays != options:
             font_changed = self.overlays['favorite']['size'] != options['favorite']['size']
+            page_font_changed = (self.overlays['pages'].get('font_size', PAGE_FONT_DEFAULT)
+                                 != options['pages'].get('font_size', PAGE_FONT_DEFAULT))
+            text_changed = self.overlays['pages'].get('text_color', '#FFFFFF') != options['pages'].get('text_color', '#FFFFFF')
             self.overlays = options
             if font_changed:
                 self._apply_badge_font()
+            if page_font_changed:
+                self._apply_page_font()
+            if text_changed:
+                self.canvas.itemconfigure(self.page_item, fill=options['pages'].get('text_color', '#FFFFFF'))
             self._render_overlays()
 
     def set_overlay_order(self, order):
@@ -492,6 +529,8 @@ class GalleryCard:
             self.canvas.delete(self.tag)
         except TclError:
             pass
+        self._page_background_photo = None
+        self._page_background_key = None
         # Explicitly release Tcl-owned font names on the UI thread.  Letting a
         # pending archive handle own their last reference could otherwise run
         # tkinter.Font.__del__ from a worker's garbage collection.

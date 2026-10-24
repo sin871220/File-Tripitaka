@@ -10,7 +10,13 @@ ARRANGEMENTS = ('섞어서', '폴더 먼저', '파일 먼저')
 SORT_LABELS = {
     '이름 오름차순': '이름 ▲', '이름 내림차순': '이름 ▼',
     '수정한 날짜 오름차순': '수정 날짜 ▲', '수정한 날짜 내림차순': '수정 날짜 ▼',
+    '용량 오름차순': '용량 ▲', '용량 내림차순': '용량 ▼',
 }
+
+
+def normalize_sort_order(value):
+    """Migrate retired or invalid saved choices to the default name sort."""
+    return value if isinstance(value, str) and value in SORT_LABELS else '이름 오름차순'
 
 
 def item_metadata(path):
@@ -91,9 +97,34 @@ def filter_items(candidates, query, kind_filter, kinds):
             and (kind is None or kinds.get(path, 'archive') == kind)]
 
 
-def sort_items(candidates, order, modified, kinds, arrangement='섞어서'):
-    """Sort within each group; descending never reverses the group order."""
-    ordered = sort_archives(candidates, order, modified)
+def sort_items(candidates, order, modified, kinds, arrangement='섞어서', metadata=None):
+    """Sort cached metadata within groups, leaving unknown numeric values last.
+
+    This function never reads candidate files. Numeric ties keep natural name
+    and path order in either direction, and descending never reverses groups.
+    """
+    order = normalize_sort_order(order)
+    if order in ('용량 오름차순', '용량 내림차순'):
+        values = metadata if metadata is not None else {}
+        ordered = sort_archives(candidates, '이름 오름차순', {})
+        known, unknown, numbers = [], [], {}
+        for path in ordered:
+            value = values.get(path)
+            try:
+                value = value[0]
+            except (IndexError, TypeError, KeyError):
+                value = None
+            valid = (isinstance(value, int) and not isinstance(value, bool)
+                     and value >= 0)
+            if valid:
+                known.append(path)
+                numbers[path] = value
+            else:
+                unknown.append(path)
+        ordered = sorted(known, key=numbers.__getitem__,
+                         reverse=order.endswith('내림차순')) + unknown
+    else:
+        ordered = sort_archives(candidates, order, modified)
     if arrangement not in ('폴더 먼저', '파일 먼저'):
         return ordered
     folder_first = arrangement == '폴더 먼저'

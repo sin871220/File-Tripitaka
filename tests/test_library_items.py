@@ -2,8 +2,10 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
-from library_items import ARRANGEMENTS, filter_items, item_metadata, scan_items, sort_items
+from library_items import (ARRANGEMENTS, SORT_LABELS, filter_items, item_metadata,
+                           normalize_sort_order, scan_items, sort_items)
 
 
 class LibraryItems(unittest.TestCase):
@@ -130,6 +132,74 @@ class LibraryItems(unittest.TestCase):
         kinds = {folder: 'folder', archive: 'archive'}
         self.assertEqual(sort_items([folder, archive], '이름 오름차순', {}, kinds, 'unknown'),
                          [archive, folder])
+
+    def test_sort_labels_have_six_name_date_and_size_choices(self):
+        self.assertEqual(SORT_LABELS,
+                         {'이름 오름차순': '이름 ▲', '이름 내림차순': '이름 ▼',
+                          '수정한 날짜 오름차순': '수정 날짜 ▲', '수정한 날짜 내림차순': '수정 날짜 ▼',
+                          '용량 오름차순': '용량 ▲', '용량 내림차순': '용량 ▼'})
+
+    def test_size_sort_keeps_group_modes_and_unknowns_last(self):
+        folder_small, folder_large, folder_unknown = (self.root / name for name in
+                                                     ('Folder2', 'Folder10', 'Folder20'))
+        file_small, file_large, file_unknown = (self.root / name for name in
+                                               ('File2.zip', 'File10.zip', 'File20.zip'))
+        paths = [folder_unknown, file_large, folder_large, file_unknown, file_small, folder_small]
+        kinds = {path: 'folder' for path in (folder_small, folder_large, folder_unknown)}
+        metadata = {folder_small: (100, 0), folder_large: (900, 0),
+                    file_small: (200, 0), file_large: (800, 0)}
+        before = paths.copy()
+        for direction, mixed, folders, files in (
+                ('오름차순', [folder_small, file_small, file_large, folder_large, file_unknown, folder_unknown],
+                 [folder_small, folder_large, folder_unknown], [file_small, file_large, file_unknown]),
+                ('내림차순', [folder_large, file_large, file_small, folder_small, file_unknown, folder_unknown],
+                 [folder_large, folder_small, folder_unknown], [file_large, file_small, file_unknown])):
+            for arrangement, expected in (('섞어서', mixed), ('폴더 먼저', folders + files),
+                                          ('파일 먼저', files + folders)):
+                with self.subTest(direction=direction, arrangement=arrangement):
+                    self.assertEqual(sort_items(paths, f'용량 {direction}', {}, kinds,
+                                                arrangement, metadata=metadata), expected)
+        self.assertEqual(paths, before)
+
+    def test_size_sort_ties_are_natural_name_then_path_for_both_directions(self):
+        a, b, c, d = (self.root / parent / name for parent, name in
+                      (('a2', 'Same2.zip'), ('a10', 'Same2.zip'),
+                       ('a1', 'Same10.zip'), ('a2', 'Same10.zip')))
+        metadata = {path: (100, 0) for path in (a, b, c, d)}
+        for paths in ([d, b, c, a], [a, c, b, d]):
+            for direction in ('오름차순', '내림차순'):
+                with self.subTest(paths=paths, direction=direction):
+                    self.assertEqual(sort_items(paths, f'용량 {direction}', {}, {},
+                                                metadata=metadata), [a, b, c, d])
+
+    def test_known_zero_size_is_distinct_from_missing_or_invalid_metadata(self):
+        zero, known, invalid, missing = (self.root / name for name in
+                                          ('Z.zip', 'K.zip', 'I.zip', 'M.zip'))
+        paths = [invalid, zero, missing, known]
+        metadata = {zero: (0, 0), known: (100, 0), invalid: (True, 0)}
+        self.assertEqual(sort_items(paths, '용량 오름차순', {}, {}, metadata=metadata),
+                         [zero, known, invalid, missing])
+        self.assertEqual(sort_items(paths, '용량 내림차순', {}, {}, metadata=metadata),
+                         [known, zero, invalid, missing])
+
+    def test_size_sort_uses_only_snapshot_maps_and_has_backwards_compatible_defaults(self):
+        paths = [self.root / 'Never10.zip', self.root / 'Never2.zip']
+        with patch.object(Path, 'stat', side_effect=AssertionError('Sorting must not stat candidates')):
+            for direction in ('오름차순', '내림차순'):
+                self.assertEqual(sort_items(paths, f'용량 {direction}', {}, {}), list(reversed(paths)))
+            self.assertEqual(sort_items(paths, '용량 오름차순', {}, {},
+                                        metadata={paths[0]: (1, 0), paths[1]: (2, 0)}), paths)
+
+    def test_retired_page_sort_and_malformed_settings_restore_default_name_order(self):
+        paths = [self.root / 'Book10.zip', self.root / 'Book2.zip']
+        for order in SORT_LABELS:
+            self.assertEqual(normalize_sort_order(order), order)
+        for retired_or_bad in ('페이지 수 오름차순', '페이지 수 내림차순', 'Page count ▼',
+                               None, [], {}, True, 1, '', 'unknown'):
+            with self.subTest(order=retired_or_bad):
+                self.assertEqual(normalize_sort_order(retired_or_bad), '이름 오름차순')
+                with patch.object(Path, 'stat', side_effect=AssertionError('Migration must not read files')):
+                    self.assertEqual(sort_items(paths, retired_or_bad, {}, {}), list(reversed(paths)))
 
 
 if __name__ == '__main__':

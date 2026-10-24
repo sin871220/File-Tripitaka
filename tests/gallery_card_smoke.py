@@ -19,7 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from gallery_card import GalleryCard
 from PIL import Image, ImageDraw, ImageTk
 from preferences import PALETTES
-from thumbnail_overlays import SIZE_SCALES, normalize_overlay_settings
+from thumbnail_overlays import PAGE_FONT_DEFAULT, SIZE_SCALES, normalize_overlay_settings
 
 
 class GalleryCardSmoke(unittest.TestCase):
@@ -393,7 +393,7 @@ class GalleryCardSmoke(unittest.TestCase):
                                 self.assertLessEqual(box[3], bottom)
                             self.assert_inside()
 
-    def test_page_badge_is_one_group_count_and_updates_without_new_images(self):
+    def test_page_badge_is_one_group_count_and_updates_without_rebuilding_thumbnail(self):
         card = self.card
         card.thumbnail.show_image(Image.new('RGB', (381, 180), '#3080d0'), (660, 260))
         photo = card.thumbnail.photo
@@ -409,15 +409,124 @@ class GalleryCardSmoke(unittest.TestCase):
             options['pages']['position'] = 'bottom_left'
             with patch.object(ImageTk, 'PhotoImage', wraps=ImageTk.PhotoImage) as image:
                 card.set_overlays(options)
-                card.set_page_count(41)
+                card.set_page_count(123456789)
                 card.set_favorite(True)
                 card.set_folder(True)
-                image.assert_not_called()
+                # A wider pill gets one new tiny sprite; its cover does not.
+                self.assertEqual(image.call_count, 1)
             self.assertIs(card.thumbnail.photo, stable_photo)
             self.assertEqual(set(self.items()), set(items))
             self.assert_inside()
         self.assertIsNotNone(photo)
         self.assertEqual(self.canvas.winfo_children(), [])
+
+    def test_page_styles_use_true_alpha_and_keep_cover_pixels_independent(self):
+        card = self.card
+        card.thumbnail.show_image(Image.new('RGB', (127, 180), '#3070d0'), (220, 260))
+        cover = card.thumbnail.photo
+        card.set_page_count(30)
+        options = normalize_overlay_settings()
+        options['pages'].update(text_color='#FFCC00', background_color='#123456')
+        font = card._page_font
+        allocated_fonts = set(tkfont.names(root=self.root))
+        items = set(self.items())
+        for alpha in (0, 25, 50, 100):
+            with self.subTest(alpha=alpha):
+                options['pages']['background_alpha'] = alpha
+                card.set_overlays(options)
+                photo = card._page_background_photo
+                self.assertIsNotNone(photo)
+                image = ImageTk.getimage(photo).convert('RGBA')
+                center = image.getpixel((image.width // 2, image.height // 2))
+                self.assertEqual(center[3], int(alpha * 255 / 100 + .5))
+                self.assertLessEqual(image.getchannel('A').getextrema()[1], center[3])
+                self.assertEqual(image.getpixel((0, 0))[3], 0,
+                                 'Rounded corners must preserve the image below the pill')
+                if alpha:
+                    for actual, expected in zip(center[:3], (18, 52, 86)):
+                        self.assertAlmostEqual(actual, expected, delta=1)
+                self.assertEqual(self.canvas.itemcget(card.page_item, 'fill'), '#FFCC00')
+                self.assertEqual(self.canvas.type(card.page_background_item), 'image')
+                self.assertIs(card.thumbnail.photo, cover)
+                self.assertIs(card._page_font, font)
+                self.assertEqual(set(tkfont.names(root=self.root)), allocated_fonts)
+                self.assertEqual(set(self.items()), items)
+                self.assert_inside()
+        background = card._page_background_photo
+        options['pages']['text_color'] = '#00AAFF'
+        with patch.object(ImageTk, 'PhotoImage', wraps=ImageTk.PhotoImage) as images:
+            card.set_overlays(options)
+            card.set_overlay_order(['pages', 'favorite', 'folder'])
+            card.layout(290, 380, 240, 340)
+            images.assert_not_called()
+        self.assertIs(card._page_background_photo, background)
+        self.assertIs(card.thumbnail.photo, cover)
+        # The translucent photo is independent of the underlying cover and
+        # theme; Tk blends it against whatever pixels are currently below it.
+        card.thumbnail.show_image(Image.new('RGB', (127, 180), '#E09020'), (220, 260))
+        self.assertIs(card._page_background_photo, background)
+        card.set_theme(PALETTES['라이트'], card.font)
+        self.assertIs(card._page_background_photo, background)
+        self.assertEqual(self.canvas.itemcget(card.page_item, 'fill'), '#00AAFF')
+
+    def test_numeric_page_points_scale_padding_and_stay_inside_each_corner(self):
+        card = self.card
+        card.set_page_count(321)
+        card.set_favorite(True)
+        card.set_folder(True)
+        card.set_overlay_order(['pages', 'folder', 'favorite'])
+        options = normalize_overlay_settings()
+        last_dimensions = None
+        for points in (5, 10, 18, 32):
+            options['pages']['font_size'] = points
+            for position in ('top_left', 'top_right', 'bottom_left', 'bottom_right'):
+                with self.subTest(points=points, position=position):
+                    for value in options.values():
+                        value['position'] = position
+                    card.set_overlays(options)
+                    self.assertEqual(int(card._page_font.cget('size')), points)
+                    boxes = [self.canvas.bbox(item) for item in
+                             (card.page_background_item, card.folder_item, card.badge_item)]
+                    self.assertTrue(all(boxes))
+                    for first, second in zip(boxes, boxes[1:]):
+                        self.assertLess(first[3], second[1])
+                    self.assert_inside()
+            photo = card._page_background_photo
+            dimensions = (photo.width(), photo.height())
+            if last_dimensions is not None:
+                self.assertGreater(dimensions[0], last_dimensions[0])
+                self.assertGreater(dimensions[1], last_dimensions[1])
+            last_dimensions = dimensions
+        font = card._page_font
+        for palette in PALETTES.values():
+            for family, ui_points in (('Courier', 8), ('Courier', 24), ('TkDefaultFont', 24)):
+                card.set_theme(palette, (family, ui_points))
+                self.assertIs(card._page_font, font)
+                self.assertEqual(int(card._page_font.cget('size')), 32)
+                self.assertEqual(card._page_font.cget('family'), family)
+                self.assert_inside()
+
+    def test_old_page_size_migrates_once_to_points_and_font_changes_do_not_rescale_it(self):
+        card = self.card
+        self.assertEqual(int(card._page_font.cget('size')), PAGE_FONT_DEFAULT)
+        legacy = normalize_overlay_settings()
+        legacy['pages'].pop('font_size', None)
+        legacy['pages']['size'] = 'small'
+        card.set_theme(PALETTES['다크'], ('TkDefaultFont', 24))
+        card.set_overlays(legacy)
+        self.assertEqual(card.overlays['pages']['font_size'], 12)
+        self.assertNotIn('size', card.overlays['pages'])
+        self.assertEqual(int(card._page_font.cget('size')), 12)
+        card.set_theme(PALETTES['라이트'], ('TkDefaultFont', 8))
+        self.assertEqual(int(card._page_font.cget('size')), 12)
+        card.set_page_count(30)
+        card.layout(20, 30, 600, 550)
+        options = normalize_overlay_settings()
+        options['pages']['font_size'] = 72
+        card.set_overlays(options)
+        self.assertEqual(int(card._page_font.cget('size')), 72)
+        self.assertEqual(self.canvas.itemcget(card.page_item, 'state'), 'normal')
+        self.assert_inside()
 
     def test_overlays_fit_the_thumbnail_after_large_fonts_resize_and_theme(self):
         card = self.card
@@ -591,12 +700,16 @@ class GalleryCardSmoke(unittest.TestCase):
                            300, 30, 240, 340, PALETTES['다크'], ('TkDefaultFont', 11))
         thumbnail = card.thumbnail  # An archive worker can retain this handle.
         thumbnail.show_image(Image.new('RGB', (127, 180), '#30c090'), (220, 260))
+        card.set_page_count(30)
+        background_name = str(card._page_background_photo)
         card_ref = weakref.ref(card)
         allocated_fonts = set(tkfont.names(root=self.root)) - fonts_before
         self.assertTrue(allocated_fonts)
         card.destroy()  # Virtual rows are removed by the UI thread.
         self.assertTrue(allocated_fonts.isdisjoint(tkfont.names(root=self.root)))
         self.assertIsNone(thumbnail.photo)
+        self.assertIsNone(card._page_background_photo)
+        self.assertNotIn(background_name, self.root.tk.call('image', 'names'))
         last_reference = [card]
         del card
         failures = []
