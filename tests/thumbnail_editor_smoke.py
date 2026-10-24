@@ -725,6 +725,65 @@ class ThumbnailEditorSmoke(unittest.TestCase):
                 self.assertEqual(list(editor.selection), expected['0']['box'])
                 editor.close()
 
+    def test_image_folder_editor_labels_entries_and_per_slot_apply_reset(self):
+        image_folder = self.folder / 'Image folder'
+        image_folder.mkdir(parents=True)
+        for name, color in (('page10.png', '#0050ff'), ('page2.png', '#00dc30'),
+                            ('page1.png', '#f03030')):
+            Image.new('RGB', (600, 900), color).save(image_folder / name)
+        child = image_folder / 'Nested folder'
+        child.mkdir()
+        Image.new('RGB', (600, 900), 'black').save(child / 'not-direct.png')
+        originals = {path: path.read_bytes() for path in image_folder.glob('*.png')}
+        for count in (1, 2, 3):
+            with self.subTest(slots=count):
+                saved, resets = {}, []
+
+                def apply(slot, entry, box, done):
+                    saved[str(slot)] = {'entry': entry, 'box': list(box)}
+                    done()
+
+                def reset(slot, done):
+                    resets.append(slot)
+                    saved.pop(str(slot), None)
+                    done()
+
+                editor = thumbnail_editor.ThumbnailEditor(
+                    self.app, image_folder, self.app.palette, slots=count,
+                    recipes={}, on_apply=apply, on_reset=reset)
+                try:
+                    self.wait_for(lambda: editor._image is not None and not editor._busy)
+                    self.assertTrue(editor.is_folder)
+                    self.assertEqual(editor.source_label.cget('text'), '폴더')
+                    self.assertEqual([entry[0] for entry in editor.entries],
+                                     ['page1.png', 'page2.png', 'page10.png'])
+                    self.assertEqual(editor.slots, count)
+                    for slot in range(count):
+                        editor.slot_combo.current(slot)
+                        editor.slot_combo.event_generate('<<ComboboxSelected>>')
+                        self.wait_for(lambda slot=slot: editor._slot == slot
+                                      and editor._image is not None and not editor._busy)
+                        editor.entry_combo.current(2)
+                        editor.entry_combo.event_generate('<<ComboboxSelected>>')
+                        self.wait_for(lambda: editor._entry_index == 2 and editor._image is not None)
+                        editor.selection = (0.1, 0.2, 0.9, 0.8)
+                        editor._selection_changed()
+                        editor.apply_button.invoke()
+                        self.assertEqual(saved[str(slot)],
+                                         {'entry': 'page10.png', 'box': [0.1, 0.2, 0.9, 0.8]})
+                        self.assertFalse(editor.reset_button.instate(['disabled']))
+                    self.assertEqual(editor.recipes, saved)
+                    editor.reset_button.invoke()
+                    self.wait_for(lambda: editor._image is not None and not editor._busy)
+                    self.assertEqual(resets, [count - 1])
+                    self.assertEqual(set(saved), {str(slot) for slot in range(count - 1)})
+                    self.assertEqual(editor.recipes, saved)
+                finally:
+                    editor.close()
+                    editor._executor.shutdown(wait=True, cancel_futures=True)
+                for path, original in originals.items():
+                    self.assertEqual(path.read_bytes(), original)
+
     def test_english_light_dark_large_font_controls_fit_minimum_window(self):
         app = self.app
         _, path = self.load(count=8, fraction=0)

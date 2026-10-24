@@ -1,4 +1,4 @@
-"""Persist thumbnail crops by verified archive content, never by file name.
+"""Persist thumbnail crops by verified archive or image-folder content.
 
 Looking up an unrelated archive never reads its whole contents: size and a
 bounded prefix/suffix fingerprint first narrow the candidates. A full SHA-256
@@ -11,6 +11,7 @@ import json
 import math
 import os
 from pathlib import Path
+import re
 import stat
 import tempfile
 import threading
@@ -20,6 +21,7 @@ QUICK_BYTES = 64 * 1024
 _HASH_CHUNK = 1024 * 1024
 _LOCKS = {}
 _LOCKS_LOCK = threading.Lock()
+_IMAGE_SUFFIXES = {'.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif', '.tif', '.tiff'}
 
 
 class ThumbnailEditDatabaseError(ValueError):
@@ -55,14 +57,22 @@ def _file_signature(path):
     return _signature(info)
 
 
-def _digest(path, expected, full, cancel=None):
+def _digest(path, expected, full, cancel=None, reject_symlink=False):
     """Check both the opened file and its current directory entry around I/O."""
     _check_cancel(cancel)
     before = _file_signature(path)
     if expected != before:
         raise ThumbnailFileChangedError('Archive changed before fingerprinting')
     digest = hashlib.sha256()
-    with path.open('rb') as stream:
+    if reject_symlink:
+        if path.is_symlink():
+            raise ThumbnailFileChangedError('Image was replaced by a symbolic link')
+        descriptor = os.open(path, os.O_RDONLY | getattr(os, 'O_BINARY', 0)
+                             | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0))
+        stream = os.fdopen(descriptor, 'rb')
+    else:
+        stream = path.open('rb')
+    with stream:
         opened = _signature(os.fstat(stream.fileno()))
         # Windows Python can report creation time from stat(path), but metadata
         # change time from fstat(fd). Compare ctime only within the same API;
@@ -82,7 +92,8 @@ def _digest(path, expected, full, cancel=None):
                 digest.update(stream.read(QUICK_BYTES))
         after = _signature(os.fstat(stream.fileno()))
     _check_cancel(cancel)
-    if after != opened or _file_signature(path) != before:
+    if (after != opened or _file_signature(path) != before
+            or reject_symlink and path.is_symlink()):
         raise ThumbnailFileChangedError('Archive changed while fingerprinting')
     return digest.hexdigest()
 
@@ -93,6 +104,76 @@ def _quick_fingerprint(path, expected, cancel=None):
 
 def _full_digest(path, expected, cancel=None):
     return _digest(path, expected, full=True, cancel=cancel)
+
+
+def _folder_signature(path, cancel=None):
+    """Snapshot only direct, regular image children, never linked images.
+
+    Stat details invalidate location hints; they are not part of the persisted
+    identity, so renamed/moved folders and identical copies can share edits.
+    """
+    _check_cancel(cancel)
+    if not stat.S_ISDIR(path.lstat().st_mode):
+        raise NotADirectoryError(str(path))
+    entries = []
+    with os.scandir(path) as listing:
+        for child in listing:
+            _check_cancel(cancel)
+            if Path(child.name).suffix.casefold() not in _IMAGE_SUFFIXES:
+                continue
+            try:
+                info = child.stat(follow_symlinks=False)
+            except FileNotFoundError as error:
+                raise ThumbnailFileChangedError('Image disappeared while listing folder') from error
+            if stat.S_ISREG(info.st_mode):
+                entries.append((child.name, _signature(info)))
+    entries.sort(key=lambda item: (
+        [int(part) if part.isdigit() else part.casefold()
+         for part in re.split(r'(\d+)', item[0])], item[0]))
+    return sum(info[0] for _, info in entries), 'folder-v1', tuple(entries)
+
+
+def _source_signature(path, cancel=None):
+    return (_folder_signature(path, cancel) if path.is_dir()
+            else _file_signature(path))
+
+
+def _source_kind(signature):
+    return 'folder' if signature[1] == 'folder-v1' else 'archive'
+
+
+def _folder_digest(path, expected, full, cancel=None):
+    """Hash ordered image names, lengths and verified individual content.
+
+    Prefix/suffix hashes of at most the first/last images cheaply reject
+    same-size unrelated folders, reading at most 256 KiB regardless of page
+    count. Full digests of every image confirm a match before crops are
+    restored. Enumeration, replacement and content changes during either pass
+    invalidate the entire identity.
+    """
+    if _folder_signature(path, cancel) != expected:
+        raise ThumbnailFileChangedError('Image folder changed before fingerprinting')
+    digest = hashlib.sha256(b'File Tripitaka image folder v1\0')
+    entries = expected[2]
+    for name, signature in entries:
+        _check_cancel(cancel)
+        digest.update(json.dumps([name, signature[0]], ensure_ascii=True,
+                                 separators=(',', ':')).encode('ascii') + b'\0')
+    selected = entries if full else entries[:1] + (entries[-1:] if len(entries) > 1 else ())
+    for name, signature in selected:
+        _check_cancel(cancel)
+        digest.update(_digest(path / name, signature, full, cancel,
+                              reject_symlink=True).encode('ascii') + b'\0')
+    if _folder_signature(path, cancel) != expected:
+        raise ThumbnailFileChangedError('Image folder changed while fingerprinting')
+    return digest.hexdigest()
+
+
+def _source_digest(path, signature, full, cancel=None):
+    if _source_kind(signature) == 'folder':
+        return _folder_digest(path, signature, full, cancel)
+    return (_full_digest(path, signature, cancel) if full
+            else _quick_fingerprint(path, signature, cancel))
 
 
 def _slot(slot):
@@ -132,6 +213,9 @@ def _validated_database(value):
                 or not isinstance(record.get('slots'), dict)
                 or not record['slots']):
             raise ValueError('Invalid archive identity in thumbnail edit database')
+        kind = record.get('kind', 'archive')
+        if kind not in ('archive', 'folder'):
+            raise ValueError('Unsupported thumbnail source kind')
         slots = {}
         for slot, recipe in record['slots'].items():
             if slot not in ('0', '1', '2') or not isinstance(recipe, dict):
@@ -139,6 +223,8 @@ def _validated_database(value):
             slots[slot] = _recipe(recipe.get('entry'), recipe.get('box'))
         result[digest] = {'size': record['size'], 'quick': record['quick'],
                           'slots': slots}
+        if kind == 'folder':
+            result[digest]['kind'] = 'folder'
     return result
 
 
@@ -191,7 +277,8 @@ class ThumbnailEditStore:
     def _reindex(self):
         self._index = {}
         for digest, record in self._records.items():
-            self._index.setdefault(record['size'], {}).setdefault(record['quick'], set()).add(digest)
+            key = record.get('kind', 'archive'), record['size']
+            self._index.setdefault(key, {}).setdefault(record['quick'], set()).add(digest)
 
     def _writable(self):
         if self._corrupt_reason is not None:
@@ -204,13 +291,16 @@ class ThumbnailEditStore:
         path = Path(archive)
         key = _path_key(path)
         try:
-            signature = _file_signature(path)
+            signature = _source_signature(path, self._cancel)
         except FileNotFoundError:
             with self._lock:
                 self._path_cache.pop(key, None)
             if create:
                 raise
             return None
+        kind = _source_kind(signature)
+        if create and kind == 'folder' and not signature[2]:
+            raise ValueError('폴더에 지원하는 이미지가 없습니다.')
         with self._lock:
             self._refresh()
             if create:
@@ -226,18 +316,18 @@ class ThumbnailEditStore:
                 if not create and cached[2] == generation:
                     return None
             candidates = {quick: frozenset(digests) for quick, digests in
-                          self._index.get(signature[0], {}).items()}
+                          self._index.get((kind, signature[0]), {}).items()}
             if not create and not candidates:
                 self._path_cache[key] = (signature, None, generation)
                 return None
         # File reads can be slow on network drives. Do them outside the database
         # lock so unrelated thumbnail workers and already-known files can proceed.
-        quick = _quick_fingerprint(path, signature, self._cancel)
+        quick = _source_digest(path, signature, full=False, cancel=self._cancel)
         if not create and quick not in candidates:
             with self._lock:
                 self._path_cache[key] = (signature, None, generation)
             return None
-        digest = _full_digest(path, signature, self._cancel)
+        digest = _source_digest(path, signature, full=True, cancel=self._cancel)
         with self._lock:
             self._path_cache[key] = (signature, digest, generation)
         if create or digest in candidates.get(quick, ()):
@@ -283,11 +373,16 @@ class ThumbnailEditStore:
         slot = _slot(slot)
         recipe = _recipe(entry, box)
         digest, signature, quick = self._identify(archive, create=True)
+        if (_source_kind(signature) == 'folder'
+                and entry not in {name for name, _ in signature[2]}):
+            raise ValueError('폴더 안의 이미지 파일을 선택해 주세요.')
         with self._lock:
             self._refresh()
             self._writable()
             records = deepcopy(self._records)
             record = records.setdefault(digest, {'size': signature[0], 'quick': quick, 'slots': {}})
+            if _source_kind(signature) == 'folder':
+                record['kind'] = 'folder'
             if record['slots'].get(slot) == recipe:
                 return
             record['slots'][slot] = recipe

@@ -153,6 +153,8 @@ class Preferences:
             return
         if action == '파일 위치 열기':
             self.reveal(path)
+        elif getattr(self, 'item_kinds', {}).get(path) == 'folder':
+            self.open_folder_image(path, action)
         elif action == CUSTOM_VIEWER_ACTION:
             viewer = self.settings.get('custom_viewer', '')
             if not is_viewer(viewer):

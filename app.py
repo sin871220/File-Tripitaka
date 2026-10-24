@@ -30,7 +30,8 @@ from ui_fonts import register_font, configure_fonts
 from preferences import Preferences, detect_honeyview, card_text
 from viewer import (default_action, normalize_action, launch_default, choose_viewer as select_viewer,
                     REVEAL_ACTION, HONEYVIEW_ACTION, DEFAULT_APP_ACTION, CUSTOM_VIEWER_ACTION)
-from archive_core import ARCHIVES, cover, render_edited_cover, natural, visible_indices, sort_archives
+from archive_core import ARCHIVES, cover, render_edited_cover, natural, visible_indices, sort_archives, image_entries
+from library_items import KIND_FILTERS, ARRANGEMENTS, SORT_LABELS, scan_items, item_metadata, filter_items, sort_items
 from file_operations import FileOperationError, rename_archive, trash_archive
 from dialog_geometry import center_dialog, _workarea
 from thumbnail_edits import (ThumbnailEditStore, ThumbnailEditDatabaseError,
@@ -94,6 +95,7 @@ class App(Preferences, tk.Tk):
         self.favorites = set(self.settings.get('file_favorites', []))
         self.folder_favorites = self.settings.get('folder_favorites', [])
         self.metadata = {}
+        self.item_kinds = {Path(name): 'folder' for name in self.settings.get('folder_item_favorites', [])}
         self.tree_paths = {}
         self.tree_requests = set()
         self.pending_restore = None
@@ -124,6 +126,10 @@ class App(Preferences, tk.Tk):
         self.folder = tk.StringVar(value=self.settings.get('folder', ''))
         self.recursive = tk.BooleanVar(value=self.settings.get('recursive', True))
         self.query = tk.StringVar()
+        kind_filter = self.settings.get('kind_filter', '전체')
+        self.kind_filter = tk.StringVar(value=kind_filter if kind_filter in KIND_FILTERS else '전체')
+        group_order = self.settings.get('group_order', '섞어서')
+        self.group_order = tk.StringVar(value=group_order if group_order in ARRANGEMENTS else '섞어서')
         self.only_favorites = tk.BooleanVar(value=self.settings.get('only_favorites', False))
         self.thumb_size = tk.IntVar(value=max(120, min(320, int(self.settings.get('thumb_size', 190)))))
         self.sort_order = tk.StringVar(value=self.settings.get('sort', '이름 오름차순'))
@@ -204,14 +210,26 @@ class App(Preferences, tk.Tk):
         self.tabs.bind('<<NotebookTabChanged>>', self.switch_tab)
         filters = ttk.Frame(body, padding=(10, 0, 10, 10))
         filters.pack(fill='x')
-        ttk.Label(filters, text=tr('파일명 검색')).pack(side='left', padx=(25, 6))
+        ttk.Label(filters, text=tr('종류')).pack(side='left', padx=(0, 6))
+        self.kind_control = ttk.Combobox(filters, textvariable=self.kind_filter,
+                                        values=KIND_FILTERS, state='readonly', width=9)
+        self.kind_control.pack(side='left')
+        self.kind_control.bind('<<ComboboxSelected>>', self.change_kind_filter)
+        ttk.Label(filters, text=tr('파일명 검색')).pack(side='left', padx=(12, 6))
         ttk.Entry(filters, textvariable=self.query, style='Search.TEntry').pack(side='left', fill='x', expand=True)
         self.query.trace_add('write', self.search_changed)
+        ttk.Label(filters, text=tr('배치')).pack(side='left', padx=(12, 6))
+        self.group_control = ttk.Combobox(filters, textvariable=self.group_order,
+                                         values=ARRANGEMENTS,
+                                         state='readonly' if self.kind_filter.get() == '전체' else 'disabled', width=13)
+        self.group_control.pack(side='left')
+        self.group_control.bind('<<ComboboxSelected>>', self.change_group_order)
         ttk.Label(filters, text=tr('정렬')).pack(side='left', padx=(16, 6))
-        sorter = ttk.Combobox(filters, textvariable=self.sort_order, state='readonly', width=22,
-                              values=['이름 오름차순', '이름 내림차순', '수정한 날짜 오름차순', '수정한 날짜 내림차순'])
+        sorter = self.sort_control = ttk.Combobox(filters, textvariable=self.sort_order, state='readonly', width=14,
+                                                 values=tuple(SORT_LABELS))
+        sorter._display_labels = SORT_LABELS
         sorter.pack(side='left')
-        sorter.bind('<<ComboboxSelected>>', lambda e: self.apply_search())
+        sorter.bind('<<ComboboxSelected>>', self.change_sort_order)
         tools = ttk.Frame(body, padding=(10, 0, 10, 8))
         tools.pack(fill='x')
         tools.columnconfigure(1, weight=1)
@@ -494,17 +512,15 @@ class App(Preferences, tk.Tk):
         paths = list(self.favorites)
         revision = self.file_revision
         def load():
-            modified, metadata = {}, {}
+            modified, metadata, kinds = {}, {}, {}
             for name in paths:
                 path = Path(name)
                 try:
-                    stat = path.stat()
-                    modified[path] = stat.st_mtime_ns
-                    metadata[path] = (stat.st_size, stat.st_mtime)
+                    kinds[path], modified[path], metadata[path] = item_metadata(path)
                 except OSError:
                     modified[path] = 0
                     metadata[path] = (0, 0)
-            self.results.put(('favorite_meta', revision, (modified, metadata), None))
+            self.results.put(('favorite_meta', revision, (modified, metadata, kinds), None))
         self.folder_pool.submit(load)
 
     def cell_width(self):
@@ -517,13 +533,16 @@ class App(Preferences, tk.Tk):
 
     def remember_position(self):
         self.smooth_scroll.stop()
-        if not self.current_folder or not self.filtered:
+        if not self.current_folder and self.active_tab != 'favorites':
             return
-        index = min(len(self.filtered) - 1, max(0, int(self.canvas.canvasy(0) // self.row_height()) * self.columns()))
-        self.views[self.current_folder] = dict(anchor=str(self.filtered[index]),
-            fraction=self.canvas.yview()[0], query=self.query.get(), sort=self.sort_order.get(),
-            favorites=self.only_favorites.get(), selected=str(self.selected_path) if self.selected_path else None)
-        self.tab_views.setdefault('__global_favorites__' if self.active_tab == 'favorites' else self.current_folder, {})[self.active_tab] = self.views[self.current_folder].copy()
+        index = min(len(self.filtered) - 1, max(0, int(self.canvas.canvasy(0) // self.row_height()) * self.columns())) if self.filtered else None
+        view = dict(anchor=str(self.filtered[index]) if index is not None else None,
+            fraction=self.canvas.yview()[0] if self.filtered else 0, query=self.query.get(), sort=self.sort_order.get(),
+            favorites=self.only_favorites.get(), kind_filter=self.kind_filter.get(), group_order=self.group_order.get(),
+            selected=str(self.selected_path) if self.selected_path in self.filtered else None)
+        if self.current_folder:
+            self.views[self.current_folder] = view.copy()
+        self.tab_views.setdefault('__global_favorites__' if self.active_tab == 'favorites' else self.current_folder, {})[self.active_tab] = view
 
     def switch_tab(self, event=None):
         target = 'favorites' if self.tabs.index(self.tabs.select()) == 1 else 'all'
@@ -538,6 +557,9 @@ class App(Preferences, tk.Tk):
         if view:
             self.query.set(view.get('query', ''))
             self.sort_order.set(view.get('sort', self.sort_order.get()))
+            self.kind_filter.set(view.get('kind_filter', self.kind_filter.get()))
+            group_order = view.get('group_order', '섞어서')
+            self.group_order.set(group_order if group_order in ARRANGEMENTS else '섞어서')
         if self.search_job is not None:
             self.after_cancel(self.search_job)
             self.search_job = None
@@ -788,9 +810,9 @@ class App(Preferences, tk.Tk):
         # Keep surviving card/PhotoImage/worker objects, changing their positions only.
         self.smooth_scroll.stop()
         top = max(0, self.canvas.canvasy(0))
-        self.filtered = sort_archives(
-            [p for p in candidates if self.query.get().casefold() in p.name.casefold()],
-            self.sort_order.get(), self.modified)
+        self.filtered = sort_items(
+            filter_items(candidates, self.query.get(), self.kind_filter.get(), self.item_kinds),
+            self.sort_order.get(), self.modified, self.item_kinds, self.group_order.get())
         indices = {path: index for index, path in enumerate(self.filtered)}
         retained = {}
         for card in self.cards.values():
@@ -859,7 +881,7 @@ class App(Preferences, tk.Tk):
             self.favorites.remove(str(old))
             if new is not None:
                 self.favorites.add(str(new))
-        for values in (self.modified, self.metadata):
+        for values in (self.modified, self.metadata, self.item_kinds):
             previous = values.pop(old, None)
             if new is not None and previous is not None:
                 values[new] = previous
@@ -881,16 +903,7 @@ class App(Preferences, tk.Tk):
         self.selected_path = new if new in self.filtered else (
             self.filtered[min(index, len(self.filtered) - 1)] if self.filtered else None)
         self.paint_selection()
-        if self.filtered:
-            self.remember_position()
-        else:
-            # remember_position deliberately ignores empty collections.
-            key = '__global_favorites__' if self.active_tab == 'favorites' else self.current_folder
-            view = dict(anchor=None, selected=None, fraction=0, query=self.query.get(),
-                        sort=self.sort_order.get(), favorites=self.only_favorites.get())
-            self.tab_views.setdefault(key, {})[self.active_tab] = view
-            if self.current_folder:
-                self.views[self.current_folder] = view.copy()
+        self.remember_position()
         self.save()
 
     def file_operation_error(self, error, path):
@@ -1034,7 +1047,7 @@ class App(Preferences, tk.Tk):
 
     def rename_file(self, path=None):
         path = path if path is not None else self.selected_path
-        if path not in self.filtered:
+        if path not in self.filtered or self.item_kinds.get(path) == 'folder':
             return 'break'
         existing = getattr(self, 'rename_window', None)
         if existing is not None and existing.winfo_exists():
@@ -1163,7 +1176,7 @@ class App(Preferences, tk.Tk):
 
     def delete_file(self, path=None):
         path = path if path is not None else self.selected_path
-        if path not in self.filtered:
+        if path not in self.filtered or self.item_kinds.get(path) == 'folder':
             return 'break'
         if not messagebox.askyesno(tr('파일 삭제'),
                 tr('다음 파일을 휴지통으로 보내시겠습니까?\n{name}\n\n원본 압축파일이 휴지통으로 이동합니다.'.format(name=path.name)),
@@ -1184,8 +1197,13 @@ class App(Preferences, tk.Tk):
         frame.set_favorite(show)
 
     def update_card_labels(self, frame, path):
-        name, details = card_text(path, self.metadata.get(path, (0, 0)), self.settings)
+        folder = self.item_kinds.get(path) == 'folder'
+        settings = dict(self.settings, show_extension=True) if folder else self.settings
+        name, details = card_text(path, self.metadata.get(path, (0, 0)), settings)
+        if folder and not name and self.settings.get('show_filename', True):
+            name = str(path)
         frame.set_text(name, details)
+        frame.set_folder(folder)
 
     def refresh_card_labels(self):
         for path, frame, _, _ in self.cards.values():
@@ -1193,8 +1211,13 @@ class App(Preferences, tk.Tk):
 
     def file_info(self, path):
         try:
-            stat = path.stat()
-            messagebox.showinfo(tr('파일 정보'), tr(f'{path.name}\n\n전체 경로: {path}\n\n크기: {stat.st_size:,} 바이트 ({stat.st_size / 1024 ** 2:.2f} MB)\n수정: {datetime.fromtimestamp(stat.st_mtime):%Y-%m-%d %H:%M:%S}'))
+            info = path.stat()
+            folder = self.item_kinds.get(path) == 'folder'
+            size, stamp = self.metadata.get(path, (0, info.st_mtime)) if folder else (info.st_size, info.st_mtime)
+            details = tr(f'{path.name}\n\n전체 경로: {path}\n\n크기: {size:,} 바이트 ({size / 1024 ** 2:.2f} MB)\n수정: {datetime.fromtimestamp(stamp):%Y-%m-%d %H:%M:%S}')
+            if folder:
+                details += '\n\n' + tr('폴더 바로 안의 이미지 용량 합계입니다.')
+            messagebox.showinfo(tr('파일 정보'), details)
         except OSError as exc:
             messagebox.showerror(tr('파일 정보'), tr(str(exc)))
 
@@ -1202,7 +1225,10 @@ class App(Preferences, tk.Tk):
         self.settings.update(folder=self.current_folder, recursive=self.recursive.get(), sort=self.sort_order.get(),
                              thumb_size=self.thumb_size.get(), only_favorites=self.only_favorites.get(),
                              views=self.views, tab_views=self.tab_views, file_favorites=sorted(self.favorites),
-                             folder_favorites=self.folder_favorites)
+                             folder_favorites=self.folder_favorites, kind_filter=self.kind_filter.get(),
+                             group_order=self.group_order.get(),
+                             folder_item_favorites=sorted(name for name in self.favorites
+                                 if self.item_kinds.get(Path(name)) == 'folder'))
         temp = CONFIG.with_suffix('.tmp')
         temp.write_text(json.dumps(self.settings, ensure_ascii=False, indent=2), 'utf-8')
         temp.replace(CONFIG)
@@ -1245,22 +1271,13 @@ class App(Preferences, tk.Tk):
             frame.destroy()
         self.cards.clear()
         self.photos.clear()
-        self.status.set(tr('압축파일을 찾고 있습니다…'))
+        self.status.set(tr('압축파일과 이미지 폴더를 찾고 있습니다…'))
         recursive = self.recursive.get()
         def find():
             try:
-                paths = root.rglob('*') if recursive else root.iterdir()
-                files = sorted((p for p in paths if p.suffix.lower() in ARCHIVES and p.is_file()), key=natural)
-                modified = {}
-                metadata = {}
-                for path in files:
-                    try:
-                        stat = path.stat()
-                        modified[path] = stat.st_mtime_ns
-                        metadata[path] = (stat.st_size, stat.st_mtime)
-                    except OSError:
-                        modified[path] = 0
-                self.results.put(('scan', gen, (files, modified, metadata, revision, root, recursive), None))
+                files, modified, metadata, kinds = scan_items(root, recursive,
+                    cancel=lambda: self.closing or gen != self.scan_generation)
+                self.results.put(('scan', gen, (files, modified, metadata, revision, root, recursive, kinds), None))
             except Exception as exc:
                 self.results.put(('scan', gen, [], str(exc)))
         self.pool.submit(find)
@@ -1274,14 +1291,32 @@ class App(Preferences, tk.Tk):
             self.after_cancel(self.search_job)
         self.search_job = self.after(250, self.apply_search)
 
+    def change_kind_filter(self, _event=None):
+        self.apply_search()
+        if self.selected_path not in self.filtered:
+            self.selected_path = None
+        self.paint_selection()
+        self.remember_position()
+
+    def change_group_order(self, _event=None):
+        self.apply_search()
+        self.remember_position()
+
+    def change_sort_order(self, _event=None):
+        self.apply_search()
+        self.remember_position()
+
     def apply_search(self):
+        if self.search_job is not None:
+            self.after_cancel(self.search_job)
         self.search_job = None
         self.smooth_scroll.stop()
+        self.group_control.configure(state='readonly' if self.kind_filter.get() == '전체' else 'disabled')
         self.save()
         candidates = [Path(p) for p in self.favorites] if self.only_favorites.get() else self.files
-        self.filtered = sort_archives(
-            [p for p in candidates if self.query.get().casefold() in p.name.casefold()],
-            self.sort_order.get(), self.modified)
+        self.filtered = sort_items(
+            filter_items(candidates, self.query.get(), self.kind_filter.get(), self.item_kinds),
+            self.sort_order.get(), self.modified, self.item_kinds, self.group_order.get())
         self.generation += 1
         self.pending.clear()
         for _, frame, _, window in self.cards.values():
@@ -1296,11 +1331,13 @@ class App(Preferences, tk.Tk):
 
     def add_cards(self, result):
         if len(result) > 3:
-            result = self.changed_snapshot(*result[:3], *result[3:])
+            if len(result) > 6:
+                self.item_kinds.update(result[6])
+            result = self.changed_snapshot(*result[:6])
         self.files, modified, metadata = result
         self.modified.update(modified)
         self.metadata.update(metadata)
-        logging.info('Scan complete: %s archives', len(self.files))
+        logging.info('Scan complete: %s library items', len(self.files))
         restore = self.pending_restore
         self.pending_restore = None
         if restore:
@@ -1309,6 +1346,9 @@ class App(Preferences, tk.Tk):
                 self.after_cancel(self.search_job)
                 self.search_job = None
             self.sort_order.set(restore.get('sort', self.sort_order.get()))
+            self.kind_filter.set(restore.get('kind_filter', self.kind_filter.get()))
+            group_order = restore.get('group_order', '섞어서')
+            self.group_order.set(group_order if group_order in ARRANGEMENTS else '섞어서')
             self.only_favorites.set(restore.get('favorites', False))
         self.active_tab = 'favorites' if self.only_favorites.get() else 'all'
         if self.active_tab == 'favorites':
@@ -1473,8 +1513,18 @@ class App(Preferences, tk.Tk):
                 if value.get('errors'):
                     messagebox.showwarning(tr('바탕화면 바로가기'), tr('일부 바로가기 이름을 변경하지 못했습니다.') + '\n\n' + '\n'.join(value['errors']))
                 continue
+            if kind == 'viewer_target':
+                if gen == self.generation and not self.closing:
+                    path, target, action = value
+                    if error:
+                        self.reveal(path)
+                    else:
+                        self.execute_action(target, action)
+                continue
             if kind == 'favorite_meta':
-                _, modified, metadata = self.changed_snapshot(list(value[0]), *value, gen)
+                _, modified, metadata = self.changed_snapshot(list(value[0]), *value[:2], gen)
+                if len(value) > 2:
+                    self.item_kinds.update({p: kind for p, kind in value[2].items() if str(p) in self.favorites})
                 self.modified.update({p: value for p, value in modified.items() if str(p) in self.favorites})
                 self.metadata.update({p: value for p, value in metadata.items() if str(p) in self.favorites})
                 if self.active_tab == 'favorites':
@@ -1529,6 +1579,9 @@ class App(Preferences, tk.Tk):
         self.after(75, self.poll)
 
     def open_archive(self, path):
+        if self.item_kinds.get(path) == 'folder':
+            self.open_folder_image(path, DEFAULT_APP_ACTION if sys.platform == 'darwin' else HONEYVIEW_ACTION)
+            return
         if sys.platform == 'darwin':
             try:
                 launch_default(path)
@@ -1552,6 +1605,25 @@ class App(Preferences, tk.Tk):
             except OSError as exc:
                 messagebox.showerror(tr('꿀뷰 실행 실패'), tr(str(exc)))
 
+    def open_folder_image(self, path, action):
+        """Resolve a folder's representative image on a worker, then launch on Tk."""
+        gen = self.generation
+        def resolve():
+            target, error = None, None
+            try:
+                entries = image_entries(path)
+                recipe = (self.thumbnail_recipes(path) or {}).get('0', {})
+                names = {entry[0] for entry in entries}
+                name = recipe.get('entry') if recipe.get('entry') in names else entries[0][0]
+                target = path / name
+                if target.is_symlink() or target.resolve().parent != path.resolve() or not target.is_file():
+                    raise FileNotFoundError(str(target))
+            except Exception as exc:
+                error = str(exc)
+                logging.info('Folder image unavailable: %s: %s', path, exc)
+            self.results.put(('viewer_target', gen, (path, target, action), error))
+        self.folder_pool.submit(resolve)
+
     def context(self, event, path):
         self.select_card(path)
         if getattr(self, 'context_menu', None) is not None:
@@ -1564,8 +1636,9 @@ class App(Preferences, tk.Tk):
         menu.add_command(label=tr('파일 위치 열기'), accelerator=self.shortcut_label('reveal'), command=lambda: self.reveal(path))
         menu.add_command(label=tr('경로 복사'), command=lambda: (self.clipboard_clear(), self.clipboard_append(str(path))))
         menu.add_separator()
-        menu.add_command(label=tr('파일 이름 바꾸기'), accelerator=self.shortcut_label('rename'), command=lambda: self.rename_file(path))
-        menu.add_command(label=tr('파일 삭제'), accelerator=self.shortcut_label('trash'), command=lambda: self.delete_file(path))
+        file_state = 'disabled' if self.item_kinds.get(path) == 'folder' else 'normal'
+        menu.add_command(label=tr('파일 이름 바꾸기'), accelerator=self.shortcut_label('rename'), command=lambda: self.rename_file(path), state=file_state)
+        menu.add_command(label=tr('파일 삭제'), accelerator=self.shortcut_label('trash'), command=lambda: self.delete_file(path), state=file_state)
         try:
             menu.tk_popup(event.x_root, event.y_root)
         finally:
@@ -1573,6 +1646,9 @@ class App(Preferences, tk.Tk):
 
     def reveal(self, path):
         try:
+            if self.item_kinds.get(path) == 'folder':
+                launch_default(path)
+                return
             selected = reveal_file(path)
             if not selected:
                 self.status.set(tr('파일 선택에 실패하여 해당 폴더를 열었습니다. 자세한 내용은 error.log에 기록했습니다.'))

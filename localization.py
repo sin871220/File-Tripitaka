@@ -7,6 +7,18 @@ from tkinter import ttk
 LANGUAGES = {'ko': '한국어', 'en': 'English'}
 _language = 'ko'
 EN = {
+    '배치': 'Grouping', '섞어서': 'Mixed', '폴더 먼저': 'Folders first', '파일 먼저': 'Files first',
+    '이름 ▲': 'Name ▲', '이름 ▼': 'Name ▼', '수정 날짜 ▲': 'Modified ▲', '수정 날짜 ▼': 'Modified ▼',
+    '종류': 'Type', '폴더': 'Folder',
+    '압축파일과 이미지 폴더를 찾고 있습니다…': 'Searching for archives and image folders…',
+    '폴더의 이미지를 불러오는 중…': 'Loading images from the folder…',
+    '폴더에 지원하는 이미지가 없습니다.': 'No supported images in this folder.',
+    '폴더 이미지 이름이 올바르지 않습니다.': 'Invalid folder image name.',
+    '폴더 안의 일반 이미지 파일만 읽을 수 있습니다.': 'Only regular image files directly in the folder can be read.',
+    '폴더 이미지가 읽기 전에 변경되었습니다.': 'The folder image changed before it could be read.',
+    '폴더 이미지를 읽는 동안 파일이 변경되었습니다.': 'The folder image changed while being read.',
+    '폴더 바로 안의 이미지 용량 합계입니다.': 'Size is the sum of images directly in this folder.',
+    '폴더 안의 이미지 파일을 선택해 주세요.': 'Choose an image directly in the folder.',
 '기본 앱으로 열기':'Open in default app','응용 프로그램':'Applications',
 'macOS에서는 .app 또는 실행 파일을 선택하세요.':'On macOS, choose an .app bundle or executable.',
 '파일만대장경':'File Tripitaka', '설정':'Settings', '일반':'General', '표시 설정':'Display', '글꼴':'Font', '열기 동작':'Actions',
@@ -175,9 +187,12 @@ def translate(text, language=None):
 def localize_widgets(widget):
     """Translate presentation only. Combobox model variables retain Korean IDs."""
     if isinstance(widget, ttk.Combobox):
+        labels = getattr(widget, '_display_labels', {})
+        def option_text(value):
+            return translate(labels.get(value, value))
         if not hasattr(widget, '_localization'):
             values = tuple(widget.cget('values'))
-            if any(value in EN for value in values):
+            if any(value in EN or value in labels for value in values):
                 original = str(widget.cget('textvariable'))
                 if original:
                     model = tk.StringVar(master=widget, name=original)
@@ -187,12 +202,12 @@ def localize_widgets(widget):
                     def sync_model(*_):
                         if busy[0]: return
                         busy[0] = True
-                        try: display.set(translate(model.get()))
+                        try: display.set(option_text(model.get()))
                         finally: busy[0] = False
                     def sync_display(*_):
                         if busy[0]: return
                         for value in values:
-                            if display.get() == translate(value):
+                            if display.get() == option_text(value):
                                 busy[0] = True
                                 try: model.set(value)
                                 finally: busy[0] = False
@@ -202,8 +217,8 @@ def localize_widgets(widget):
                     widget.configure(textvariable=display)
         if hasattr(widget, '_localization'):
             values, model, display = widget._localization
-            widget.configure(values=[translate(value) for value in values])
-            display.set(translate(model.get()))
+            widget.configure(values=[option_text(value) for value in values])
+            display.set(option_text(model.get()))
     elif isinstance(widget, ttk.Notebook):
         for tab in widget.tabs():
             widget.tab(tab, text=translate(widget.tab(tab, 'text')))

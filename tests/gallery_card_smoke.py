@@ -134,6 +134,66 @@ class GalleryCardSmoke(unittest.TestCase):
                         or not self.canvas.itemcget(card.badge_item, 'text'))
         self.assertEqual(self.canvas.winfo_children(), [])
 
+    def test_folder_marker_is_vector_local_and_independent_of_favorite(self):
+        card = self.card
+        card.set_text('Image folder', '12.0 MB')
+        card.thumbnail.show_image(Image.new('RGB', (127, 180), '#3080d0'), (220, 260))
+        items = self.items()
+        image_area = card._image_area
+        photo = card.thumbnail.photo
+        self.assertEqual(self.canvas.itemcget(card.folder_item, 'state'), 'hidden')
+        self.assertEqual(self.canvas.type(card.folder_item), 'polygon')
+        card.set_folder(True)
+        card.set_favorite(True)
+        for name, palette in PALETTES.items():
+            with self.subTest(theme=name):
+                card.set_theme(palette, ('TkDefaultFont', 13))
+                self.root.update_idletasks()
+                folder = self.canvas.bbox(card.folder_item)
+                favorite = self.canvas.bbox(card.badge_item)
+                self.assertIsNotNone(folder)
+                self.assertIsNotNone(favorite)
+                self.assertLess(folder[2], favorite[0])
+                self.assertEqual(self.canvas.itemcget(card.folder_item, 'outline'), palette['border'])
+                self.assertTrue(card.folder)
+                self.assertTrue(card.favorite)
+                self.assert_inside()
+        # The marker can be toggled without allocating image or canvas items.
+        card.set_theme(PALETTES['다크'], ('TkDefaultFont', 11))
+        self.assertEqual(card._image_area, image_area)
+        self.assertIs(card.thumbnail.photo, photo)
+        with patch.object(self.canvas, 'coords', wraps=self.canvas.coords) as coords, \
+                patch.object(self.canvas, 'itemconfigure', wraps=self.canvas.itemconfigure) as configure:
+            card.set_folder(True)
+            coords.assert_not_called()
+            configure.assert_not_called()
+        card.set_folder(False)
+        self.assertFalse(card.folder)
+        self.assertEqual(self.canvas.itemcget(card.folder_item, 'state'), 'hidden')
+        self.assertNotEqual(self.canvas.itemcget(card.badge_item, 'state'), 'hidden')
+        self.assertEqual(set(self.items()), set(items))
+        self.assertEqual(self.canvas.winfo_children(), [])
+
+    def test_folder_marker_click_uses_card_selection_and_tiny_cards_hide_it(self):
+        selected = []
+        self.card.set_folder(True)
+        self.card.bind('<Button-1>', lambda event: selected.append(self.path))
+        self.root.update()
+        box = self.canvas.bbox(self.card.folder_item)
+        x, y = (box[0] + box[2]) // 2, (box[1] + box[3]) // 2
+        self.canvas.event_generate('<Motion>', x=x, y=y)
+        self.canvas.event_generate('<ButtonPress-1>', x=x, y=y)
+        self.canvas.event_generate('<ButtonRelease-1>', x=x, y=y)
+        self.root.update()
+        self.assertEqual(selected, [self.path])
+        items = self.items()
+        self.card.layout(20, 30, 45, 25)
+        self.assertEqual(self.canvas.itemcget(self.card.folder_item, 'state'), 'hidden')
+        self.card.layout(20, 30, 240, 340)
+        self.assertNotEqual(self.canvas.itemcget(self.card.folder_item, 'state'), 'hidden')
+        self.assertEqual(set(self.items()), set(items))
+        self.assert_inside()
+
     def test_images_preserve_aspect_and_cannot_draw_across_rows(self):
         self.card.set_text('Archive-001.cbz', '12.0 MB · 2026-10-19')
         for size in ((127, 180), (1800, 200), (200, 1800), (381, 180)):

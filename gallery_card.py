@@ -99,6 +99,7 @@ class GalleryCard:
         self.geometry = None
         self.selected = False
         self.favorite = False
+        self.folder = False
         self.name = ''
         self.details = ''
         self._bindings = {}
@@ -115,6 +116,11 @@ class GalleryCard:
                                             state='hidden', tags=(self.tag,))
         self.badge_item = canvas.create_text(0, 0, text='★', anchor='ne', state='hidden',
                                              tags=(self.tag,))
+        # A vector marker stays legible without depending on emoji/CJK glyphs.
+        # Allocate it even for archives so toggling item kinds never churns the
+        # virtual gallery's canvas items or its existing event bindings.
+        self.folder_item = canvas.create_polygon(0, 0, 0, 0, 0, 0,
+                                                  state='hidden', tags=(self.tag,))
         self.thumbnail = CardThumbnail(self)
         self._image_area = (0, 0, 1, 1)
         self._apply_colors()
@@ -129,6 +135,8 @@ class GalleryCard:
             self.canvas.itemconfigure(item, fill=p['fg'], font=self._font)
         self.canvas.itemconfigure(self.info_item, fill=p['muted'], font=self._font)
         self.canvas.itemconfigure(self.badge_item, fill='#FFD21F', font=self._badge_font)
+        self.canvas.itemconfigure(self.folder_item, fill='#F3C65D',
+                                  outline=p['border'], width=1)
 
     def layout(self, x, y, width, height):
         if not self.alive:
@@ -210,6 +218,7 @@ class GalleryCard:
         self._image_area = (x + 8, y + 8, max(x + 8, x + width - 8),
                             max(y + 8, cover_bottom))
         self._render_thumbnail()
+        self._render_folder()
         self._render_badge()
 
     def _render_thumbnail(self):
@@ -259,6 +268,23 @@ class GalleryCard:
             self.canvas.itemconfigure(self.badge_item, state='hidden')
         self.canvas.tag_raise(self.badge_item)
 
+    def _render_folder(self):
+        if not self.alive or self.geometry is None:
+            return
+        x, y, width, height = self.geometry
+        # Leave enough room at the other edge for the independent favorite
+        # star. Tiny synthetic cards simply omit the optional type marker.
+        visible = (self.folder and width >= 48 + self._badge_font.measure('★')
+                   and height >= 35)
+        self.canvas.itemconfigure(self.folder_item, state='normal' if visible else 'hidden')
+        if visible:
+            left, top = x + 8, y + 8
+            self.canvas.coords(self.folder_item,
+                               left, top + 3, left + 10, top + 3,
+                               left + 13, top + 7, left + 28, top + 7,
+                               left + 28, top + 22, left, top + 22)
+            self.canvas.tag_raise(self.folder_item)
+
     def set_theme(self, palette, font):
         if not self.alive:
             return
@@ -294,6 +320,12 @@ class GalleryCard:
         if self.alive and self.favorite != favorite:
             self.favorite = favorite
             self._render_badge()
+
+    def set_folder(self, folder):
+        folder = bool(folder)
+        if self.alive and self.folder != folder:
+            self.folder = folder
+            self._render_folder()
 
     def bind(self, sequence, callback):
         if not self.alive:

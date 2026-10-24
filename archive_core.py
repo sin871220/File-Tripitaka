@@ -1,4 +1,4 @@
-"""Archive cover loading. Archive members are never extracted onto user folders."""
+"""Load covers from archives or direct image folders without modifying sources."""
 import hashlib
 import io
 import json
@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import subprocess
 import zipfile
 import warnings
@@ -37,7 +38,73 @@ def command(args):
                           creationflags=0x08000000 if os.name == 'nt' else 0)
 
 
+def _folder_name_valid(name):
+    return (isinstance(name, str) and bool(name) and name not in ('.', '..')
+            and not any(character in name for character in ('\0', '/', '\\', ':'))
+            and not Path(name).is_absolute() and Path(name).suffix.lower() in IMAGES)
+
+
+def folder_image_entries(path):
+    """Return naturally ordered, direct regular images, excluding symlinks.
+
+    Child folders have their own gallery cards; their images are not inherited
+    by a parent card. A folder with an archive-looking suffix is still a folder.
+    """
+    path = Path(path)
+    entries = []
+    with os.scandir(path) as children:
+        for child in children:
+            if not _folder_name_valid(child.name):
+                continue
+            try:
+                info = child.stat(follow_symlinks=False)
+            except FileNotFoundError:
+                # A file removed during scanning is not a usable page.
+                continue
+            if stat.S_ISREG(info.st_mode):
+                entries.append((child.name, info.st_size))
+    if not entries:
+        raise ValueError('폴더에 지원하는 이미지가 없습니다.')
+    return sorted(entries, key=lambda entry: (natural(entry[0]), entry[0]))
+
+
+def _folder_image(path, name):
+    """Validate an untrusted page name before resolving or opening it."""
+    if not _folder_name_valid(name):
+        raise ValueError('폴더 이미지 이름이 올바르지 않습니다.')
+    root = Path(path).resolve(strict=True)
+    candidate = root / name
+    info = candidate.lstat()
+    if not stat.S_ISREG(info.st_mode) or candidate.resolve(strict=True).parent != root:
+        raise ValueError('폴더 안의 일반 이미지 파일만 읽을 수 있습니다.')
+    return candidate, info
+
+
+def source_signature(path, entries=None):
+    """Describe cache inputs without decoding or reading image contents.
+
+    For folders, every direct page contributes metadata. Editing an existing
+    image need not alter its parent folder's mtime, so folder stat alone is not
+    enough to invalidate either automatic or edited covers.
+    """
+    path = Path(path)
+    if path.is_dir():
+        entries = folder_image_entries(path) if entries is None else entries
+        pages = []
+        for name, _size in entries:
+            _candidate, info = _folder_image(path, name)
+            pages.append((name, info.st_size, info.st_mtime_ns, info.st_ctime_ns,
+                          info.st_dev, info.st_ino))
+        return ('folder-v1', pages)
+    info = path.stat()
+    return ('archive-v1', info.st_size, info.st_mtime_ns, info.st_ctime_ns,
+            info.st_dev, info.st_ino)
+
+
 def image_entries(path):
+    path = Path(path)
+    if path.is_dir():
+        return folder_image_entries(path)
     if path.suffix.lower() in {'.zip', '.cbz'}:
         with zipfile.ZipFile(path) as archive:
             entries = [(i.filename, i.file_size) for i in archive.infolist()
@@ -57,9 +124,29 @@ def image_entries(path):
 
 
 def read_image_entry(path, entry):
+    path = Path(path)
     name, size = entry
     if size > MAX_IMAGE:
         raise ValueError('대표 이미지가 64MB를 초과합니다.')
+    if path.is_dir():
+        candidate, before = _folder_image(path, name)
+        if before.st_size > MAX_IMAGE:
+            raise ValueError('대표 이미지가 64MB를 초과합니다.')
+        flags = (os.O_RDONLY | getattr(os, 'O_BINARY', 0)
+                 | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0))
+        with os.fdopen(os.open(candidate, flags), 'rb') as stream:
+            opened = os.fstat(stream.fileno())
+            identity = lambda info: (info.st_size, info.st_mtime_ns, info.st_dev, info.st_ino)
+            if not stat.S_ISREG(opened.st_mode) or identity(opened) != identity(before):
+                raise OSError('폴더 이미지가 읽기 전에 변경되었습니다.')
+            data = stream.read(MAX_IMAGE + 1)
+            after = os.fstat(stream.fileno())
+        _candidate, current = _folder_image(path, name)
+        if identity(after) != identity(opened) or identity(current) != identity(before):
+            raise OSError('폴더 이미지를 읽는 동안 파일이 변경되었습니다.')
+        if len(data) > MAX_IMAGE:
+            raise ValueError('대표 이미지가 64MB를 초과합니다.')
+        return data
     if path.suffix.lower() in {'.zip', '.cbz'}:
         with zipfile.ZipFile(path) as archive, archive.open(name) as stream:
             return stream.read(MAX_IMAGE + 1)
@@ -82,13 +169,15 @@ def preview_indices(length, count, sampling='순차 보기'):
 def cover(path, cache, preview_count=1, sampling='순차 보기'):
     preview_count = max(1, min(3, int(preview_count)))
     path = Path(path).resolve()
-    stat = path.stat()
-    key = hashlib.sha256(f'v7:{sampling}:{preview_count}:{path}:{stat.st_size}:{stat.st_mtime_ns}'.encode()).hexdigest()
+    entries = image_entries(path) if path.is_dir() else None
+    specification = ('cover-v8', sampling, preview_count, str(path), source_signature(path, entries))
+    key = hashlib.sha256(json.dumps(specification, ensure_ascii=False,
+                                   separators=(',', ':')).encode('utf-8')).hexdigest()
     target = Path(cache) / (key + '.png')
     if target.exists():
         with Image.open(target) as im:
             return im.copy()
-    entries = image_entries(path)
+    entries = entries if entries is not None else image_entries(path)
     images = []
     for index in preview_indices(len(entries), preview_count, sampling):
         try:
@@ -177,9 +266,8 @@ def render_edited_cover(path, cache, recipes, preview_count=1, sampling='순차 
                 # Ignore a malformed stored edit instead of losing the cover.
                 box = None
         selected.append((entry, box))
-    stat = path.stat()
-    specification = {'schema': 'edited-cover-v1', 'path': str(path),
-                     'size': stat.st_size, 'mtime_ns': stat.st_mtime_ns,
+    specification = {'schema': 'edited-cover-v2', 'path': str(path),
+                     'source': source_signature(path, entries),
                      'count': preview_count, 'sampling': sampling, 'selected': selected}
     key = hashlib.sha256(json.dumps(specification, ensure_ascii=False, sort_keys=True,
                                     separators=(',', ':')).encode('utf-8')).hexdigest()

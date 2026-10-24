@@ -59,6 +59,7 @@ class ThumbnailEditor(tk.Toplevel):
         self.withdraw()
         self.parent = parent
         self.path = Path(path)
+        self.is_folder = self.path.is_dir()
         self.palette = palette
         self.slots = max(1, min(3, int(slots)))
         self.sampling = sampling
@@ -95,7 +96,8 @@ class ThumbnailEditor(tk.Toplevel):
         self._entry_var = tk.StringVar(self)
         self._ratio_var = tk.StringVar(self, tr(RATIO_LABELS[1]))
         self._zoom_var = tk.DoubleVar(self, 100)
-        self._status_var = tk.StringVar(self, tr('압축파일의 이미지를 불러오는 중…'))
+        self._status_var = tk.StringVar(self, tr('폴더의 이미지를 불러오는 중…'
+                                                if self.is_folder else '압축파일의 이미지를 불러오는 중…'))
         self._page_var = tk.StringVar(self)
         self._selection_var = tk.StringVar(self)
         self.ui_font = getattr(parent, 'ui_font', 'TkDefaultFont')
@@ -138,8 +140,9 @@ class ThumbnailEditor(tk.Toplevel):
         header = ttk.Frame(self, padding=(14, 12, 14, 7))
         header.grid(row=0, column=0, sticky='ew')
         header.columnconfigure(1, weight=1)
-        ttk.Label(header, text=tr('압축파일'), font=self._font).grid(
-            row=0, column=0, padx=(0, 9))
+        self.source_label = ttk.Label(header, text=tr('폴더' if self.is_folder else '압축파일'),
+                                      font=self._font)
+        self.source_label.grid(row=0, column=0, padx=(0, 9))
         self._filename_var = tk.StringVar(self, self.path.name)
         self.filename_entry = ttk.Entry(header, textvariable=self._filename_var,
                                         state='readonly', font=self._font,

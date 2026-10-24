@@ -113,7 +113,7 @@ class WheelRoutingSmoke(unittest.TestCase):
         count = next(widget for widget in self.app.thumbnail_controls.winfo_children()
                      if isinstance(widget, module.ttk.Combobox)
                      and int(widget.grid_info()['column']) == 4)
-        return sorter, count, self.app.sampling_control
+        return sorter, count, self.app.sampling_control, self.app.kind_control, self.app.group_control
 
     @contextmanager
     def popup(self, combo):

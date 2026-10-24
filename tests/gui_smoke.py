@@ -22,7 +22,7 @@ def assert_canvas_cards():
     # The gallery must paint through one Canvas surface. Native child windows
     # have a separate Windows repaint path and can leave strips while moving.
     assert app.canvas.winfo_children() == []
-    assert all(app.canvas.type(item) in ('rectangle', 'image', 'text')
+    assert all(app.canvas.type(item) in ('rectangle', 'image', 'text', 'polygon')
                for item in app.canvas.find_all())
     for _, card, thumbnail, background in app.cards.values():
         assert card.alive and thumbnail.exists()

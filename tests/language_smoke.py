@@ -59,14 +59,22 @@ with tempfile.TemporaryDirectory() as tmp:
                and app.canvas.itemcget(card[1].title_item, 'text') == '설정.zip'
                for card in app.cards.values())
     assert app.canvas.winfo_children() == []
-    assert all(app.canvas.type(item) in ('rectangle', 'image', 'text')
+    assert all(app.canvas.type(item) in ('rectangle', 'image', 'text', 'polygon')
                for item in app.canvas.find_all())
+    assert all(app.canvas.itemcget(card[1].folder_item, 'state') == 'hidden'
+               for card in app.cards.values())
     assert translate('미리보기 불가\n압축파일에 지원하는 이미지가 없습니다.') == 'Preview unavailable\nNo supported images in this archive.'
-    sorter = next(w for w in descendants(app) if isinstance(w, ttk.Combobox) and 'Name ascending' in w.cget('values'))
-    sorter.set('Name descending')
+    sorter = app.sort_control
+    assert tuple(sorter.cget('values')) == ('Name ▲', 'Name ▼', 'Modified ▲', 'Modified ▼')
+    sorter.set('Name ▼')
     sorter.event_generate('<<ComboboxSelected>>')
     app.update()
     assert app.sort_order.get() == '이름 내림차순'
+    assert tuple(app.group_control.cget('values')) == ('Mixed', 'Folders first', 'Files first')
+    app.group_control.set('Folders first')
+    app.group_control.event_generate('<<ComboboxSelected>>')
+    app.update()
+    assert app.group_order.get() == '폴더 먼저'
     app.open_settings()
     dialog = app.settings_window
     assert dialog.title() == 'Settings · File Tripitaka'
@@ -86,6 +94,10 @@ with tempfile.TemporaryDirectory() as tmp:
     assert app.tabs.tab(0, 'text') == '전체'
     assert app.settings['language'] == 'ko'
     assert app.sort_order.get() == '이름 내림차순'
+    assert app.sort_control.get() == '이름 ▼'
+    assert tuple(app.sort_control.cget('values')) == ('이름 ▲', '이름 ▼', '수정 날짜 ▲', '수정 날짜 ▼')
+    assert app.group_order.get() == '폴더 먼저'
+    assert app.group_control.get() == '폴더 먼저'
     app.settings['language'] = 'en'
     app.save()
     assert json.loads(module.CONFIG.read_text('utf-8'))['language'] == 'en'

@@ -98,6 +98,10 @@ Mac의 기본 더블클릭 동작은 **Finder에서 파일 위치 열기**입니
 
 ### 1장·2장·3장 미리보기
 
+현재 소스 테스트 버전 **1.3.0-beta.2**에서는 이미지가 직접 들어 있는 폴더도 카드로 모아 봅니다. **종류 → 전체 / 압축파일 / 폴더**로 고르고 검색·정렬을 함께 사용하세요. 정렬은 **이름 ▲·▼ / 수정 날짜 ▲·▼**, 배치는 **섞어서 / 폴더 먼저 / 파일 먼저**에서 고릅니다. ▲·▼를 바꿔도 그룹 순서는 유지하고 각 그룹 내부에서 정렬합니다. 기본 배치는 섞어서이며, 종류를 하나만 표시할 때는 배치 선택이 비활성화됩니다. 탭별 선택과 스크롤 위치는 다시 열 때도 기억합니다. 폴더 카드에는 작은 폴더 표시가 있으며, 아래의 1장·2장·3장 미리보기·즐겨찾기·영역 편집을 그대로 사용합니다. 폴더 즐겨찾기는 왼쪽의 탐색 폴더 즐겨찾기와 별개로 전역 즐겨찾기 탭에 모입니다.
+
+폴더의 뷰어 열기는 대표 이미지(저장한 1번 이미지 또는 첫 이미지)를 열고, 파일 위치 열기는 해당 폴더를 엽니다. 폴더 용량은 직접 포함된 이미지의 합계입니다. 폴더 카드의 이름 변경·휴지통 이동은 비활성화되어 있습니다. 폴더 이름·위치 변경 후에도 내부 이미지 이름과 내용이 같으면 편집을 복원하며, 이미지 추가·삭제·이름·내용 변경 시에는 새 구성으로 인식합니다.
+
 기본은 **1장 보기**입니다. 2장·3장 보기는 카드의 폭을 넓혀 이미지를 작은 간격으로 나란히 배치합니다.
 
 | 선택 | 순차 보기에서 고르는 이미지 | 비율 보기에서 고르는 이미지 | 화면의 왼쪽 → 오른쪽 |
@@ -181,7 +185,7 @@ Windows 소스 실행은 **새 버전 ZIP을 새 폴더에 전부 푼 뒤 그 �
 
 공유폴더를 통해 다른 Windows 컴퓨터로 옮겨 테스트할 때는 `python scripts/package_windows_test.py`로 **Windows-Test.zip 하나**를 만들 수 있습니다. 코드·아이콘·글꼴과 실행 배치가 한 버전 폴더에 들어가며, Git 미추적 신규 모듈도 포함합니다. ZIP 전체를 옮겨 새 폴더에 푼 뒤 그 안의 배치를 실행하세요. 이 테스트 ZIP에는 Python이나 EXE가 포함되지 않습니다.
 
-**배포 ZIP과 소스 테스트 ZIP은 다릅니다.** GitHub Releases의 `Windows-x64`·`macOS-arm64`·`macOS-x86_64` 패키지는 Python을 포함합니다. `python scripts/package_windows_test.py`로 만드는 현재 소스 테스트 `File-Tripitaka-v1.2.5-Windows-Test.zip`은 소스 실행용이므로 Windows용 Python 3.12 이상을 따로 설치해야 합니다. 테스트 ZIP도 현재 공개 배포 버전과 같은 1.2.5 소스로 만듭니다.
+**배포 ZIP과 소스 테스트 ZIP은 다릅니다.** GitHub Releases의 `Windows-x64`·`macOS-arm64`·`macOS-x86_64` 패키지는 Python을 포함합니다. `python scripts/package_windows_test.py`로 만드는 현재 소스 테스트 `File-Tripitaka-v1.3.0-beta.2-Windows-Test.zip`은 소스 실행용이므로 Windows용 Python 3.12 이상을 따로 설치해야 합니다. 현재 공개 배포 버전은 1.2.5입니다.
 
 - Windows: 소스 실행은 `run-windows.bat`, 배포 빌드는 `build-windows.bat`.
 - macOS: `build-macos.sh`. Apple Silicon과 Intel은 해당 CPU용 Python 환경에서 각각 빌드합니다.
@@ -196,6 +200,7 @@ python tests/shortcuts_smoke.py
 python tests/thumbnail_editor_smoke.py
 python tests/scroll_smoke.py
 python tests/wheel_routing_smoke.py
+python tests/folder_gallery_smoke.py
 python tests/gallery_card_smoke.py
 ```
 
