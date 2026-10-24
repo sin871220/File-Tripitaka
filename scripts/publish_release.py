@@ -40,9 +40,11 @@ def main():
     repository = os.environ['GITHUB_REPOSITORY']
     if not os.environ.get('GH_TOKEN'):
         raise ValueError('The publishing job requires its repository-scoped GITHUB_TOKEN.')
-    notes = ROOT / 'BETA-RELEASE.md'
+    notes = ROOT / 'RELEASE-NOTES.md'
     if not notes.is_file():
-        raise FileNotFoundError('BETA-RELEASE.md is required before publishing.')
+        notes = ROOT / 'BETA-RELEASE.md'
+    if not notes.is_file():
+        raise FileNotFoundError('Release notes are required before publishing.')
     assets = release_assets(ROOT / 'dist' / 'releases', version)
     base = ['gh', 'release']
     common = ['--repo', repository]

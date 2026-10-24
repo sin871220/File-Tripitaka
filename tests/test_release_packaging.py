@@ -116,6 +116,15 @@ class ReleasePackagingTests(unittest.TestCase):
                 self.assertIn('--latest=false', command)
                 self.assertNotIn('--latest=true', command)
 
+    def test_current_release_notes_take_precedence_over_beta_history(self):
+        with self.publication('1.3.0') as (root, run):
+            notes = root / 'RELEASE-NOTES.md'
+            notes.write_text('Current public release notes\n', encoding='utf-8')
+            publish_release.main()
+            commands = [call.args[0] for call in run.call_args_list]
+            for command in (commands[1], commands[3]):
+                self.assertEqual(command[command.index('--notes-file') + 1], str(notes))
+
     def test_draft_rerun_can_finish_a_stable_release(self):
         with self.publication('1.2.1', {'isDraft': True, 'isPrerelease': True}) as (_, run):
             publish_release.main()

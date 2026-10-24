@@ -225,7 +225,7 @@ def package_release(artifact, target, arch, version, work, output):
         shutil.copytree(artifact, staging / artifact.name, symlinks=True)
     else:
         shutil.copy2(artifact, staging / artifact.name)
-    for name in ('README.md', 'BETA-RELEASE.md', 'LICENSE', 'LICENSE.txt'):
+    for name in ('README.md', 'RELEASE-NOTES.md', 'BETA-RELEASE.md', 'LICENSE', 'LICENSE.txt'):
         if (ROOT / name).is_file():
             shutil.copy2(ROOT / name, staging / name)
     for relative in ('assets/app.png', 'docs/images/library-overview.png'):
@@ -242,14 +242,14 @@ Windows: Extract the ZIP and run {identity()[1]}.exe. Python is not required.
 macOS: Extract the ZIP and drag File Tripitaka.app to Applications.
 Use the arm64 build for Apple Silicon, or x86_64 for Intel Macs (macOS 15+).
 This build has no verified publisher signature or Apple notarization.
-Read BETA-RELEASE.md for release notes and execution requirements.
+Read RELEASE-NOTES.md for release notes and execution requirements.
 ZIP/CBZ work directly; RAR/7Z previews require a separate 7-Zip installation.
 External image viewers are installed separately.
 
 윈도우: 압축을 풀고 EXE를 실행하세요. Python 설치는 필요 없습니다.
 맥: 압축을 풀고 File Tripitaka.app을 응용 프로그램으로 옮기세요.
 Apple Silicon은 arm64, Intel Mac은 x86_64 버전을 사용하세요 (macOS 15 이상).
-이 배포 파일은 배포자 서명·Apple 공증을 받지 않았습니다. BETA-RELEASE.md를 읽어 주세요.
+이 배포 파일은 배포자 서명·Apple 공증을 받지 않았습니다. RELEASE-NOTES.md를 읽어 주세요.
 RAR·7Z 미리보기용 7-Zip과 외부 뷰어는 별도 설치가 필요합니다.
 '''
     (staging / 'START-HERE.txt').write_text(instructions, encoding='utf-8')

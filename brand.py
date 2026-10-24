@@ -3,7 +3,7 @@ from pathlib import Path
 import sys
 
 APP_NAME = '파일만대장경'
-APP_VERSION = '1.3.0-beta.16'
+APP_VERSION = '1.3.0'
 APP_TITLE = f'{APP_NAME} v{APP_VERSION}'
 EXE_NAME = 'FileManDaejanggyeong'
 

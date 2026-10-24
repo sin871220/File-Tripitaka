@@ -7,12 +7,12 @@
 <p align="center"><strong>압축파일 안의 사진을, 한눈에.</strong></p>
 
 <p align="center">
-  여러 폴더에 흩어진 압축파일을 썸네일로 훑어보고,<br>
+  여러 폴더에 흩어진 압축파일과 이미지 폴더를 썸네일로 훑어보고,<br>
   마음에 드는 파일을 모아 원하는 뷰어로 여는 Windows·macOS 프로그램입니다.
 </p>
 
 <p align="center">
-  <a href="https://github.com/sin871220/File-Tripitaka/releases/tag/v1.2.5"><strong>1.2.5 다운로드</strong></a>
+  <a href="https://github.com/sin871220/File-Tripitaka/releases/tag/v1.3.0"><strong>1.3.0 다운로드</strong></a>
   &nbsp;·&nbsp;
   <a href="#처음-사용하기">사용 방법</a>
   &nbsp;·&nbsp;
@@ -27,38 +27,40 @@
 
 ## 다운로드
 
-**현재 버전은 1.2.5입니다.** 설정의 기능별 단축키에 **썸네일 영역 편집**을 추가했습니다. 원하는 키를 두 개까지 지정해 선택한 파일의 편집기를 열 수 있으며, 기존 키 설정과 별도 더블클릭 동작을 유지합니다. [1.2.5 업데이트 내역](BETA-RELEASE.md#125-업데이트-목록)을 확인하세요.
+**현재 버전은 1.3.0입니다.** 이미지 폴더 썸네일, 폴더 탭, 썸네일 위 표시 설정과 왼쪽 폴더 패널 조절을 추가했습니다. 즐겨찾는 폴더는 드래그로 정렬하고 확인창을 거쳐 등록과 탭만 제거할 수 있습니다. [1.3.0 업데이트 내역](RELEASE-NOTES.md)을 확인하세요.
 
-[v1.2.5 다운로드 페이지](https://github.com/sin871220/File-Tripitaka/releases/tag/v1.2.5)에서 내 컴퓨터에 맞는 ZIP을 받으세요. Python을 따로 설치할 필요가 없습니다.
+[v1.3.0 다운로드 페이지](https://github.com/sin871220/File-Tripitaka/releases/tag/v1.3.0)에서 내 컴퓨터에 맞는 ZIP을 받으세요. Python을 따로 설치할 필요가 없습니다.
 
 각 ZIP의 `THIRD-PARTY` 폴더에 Tcl/Tk와 포함 라이브러리의 라이선스·고지문이 들어 있습니다. `SHA256SUMS.txt`로 다운로드한 파일의 무결성을 확인할 수 있습니다.
 
 | 내 컴퓨터 | 받을 파일 | 실행 방법 |
 |---|---|---|
-| Windows 10/11 · 64비트 | [Windows-x64.zip](https://github.com/sin871220/File-Tripitaka/releases/download/v1.2.5/File-Tripitaka-v1.2.5-Windows-x64.zip) | 압축을 풀고 `FileManDaejanggyeong.exe` 실행 |
-| Mac · Apple Silicon(M1 이상) | [macOS-arm64.zip](https://github.com/sin871220/File-Tripitaka/releases/download/v1.2.5/File-Tripitaka-v1.2.5-macOS-arm64.zip) | 압축을 풀고 `File Tripitaka.app`을 응용 프로그램 폴더로 이동 |
-| Mac · Intel | [macOS-x86_64.zip](https://github.com/sin871220/File-Tripitaka/releases/download/v1.2.5/File-Tripitaka-v1.2.5-macOS-x86_64.zip) | 압축을 풀고 `File Tripitaka.app`을 응용 프로그램 폴더로 이동 |
+| Windows 10/11 · 64비트 | [Windows-x64.zip](https://github.com/sin871220/File-Tripitaka/releases/download/v1.3.0/File-Tripitaka-v1.3.0-Windows-x64.zip) | 압축을 풀고 `FileManDaejanggyeong.exe` 실행 |
+| Mac · Apple Silicon(M1 이상) | [macOS-arm64.zip](https://github.com/sin871220/File-Tripitaka/releases/download/v1.3.0/File-Tripitaka-v1.3.0-macOS-arm64.zip) | 압축을 풀고 `File Tripitaka.app`을 응용 프로그램 폴더로 이동 |
+| Mac · Intel | [macOS-x86_64.zip](https://github.com/sin871220/File-Tripitaka/releases/download/v1.3.0/File-Tripitaka-v1.3.0-macOS-x86_64.zip) | 압축을 풀고 `File Tripitaka.app`을 응용 프로그램 폴더로 이동 |
 
 Mac 버전은 **macOS 15 이상**을 지원합니다. Mac의 칩 종류는  → **이 Mac에 관하여**에서 확인할 수 있습니다.
 
-현재 배포 파일은 **배포자 코드 서명·Apple 공증이 없어** 운영체제의 실행 경고나 차단이 나타날 수 있습니다. 자세한 실행 조건은 [배포 안내](BETA-RELEASE.md)를 확인하세요. 이전 버전과 변경 사항은 [전체 Releases](https://github.com/sin871220/File-Tripitaka/releases)에 모아 둡니다.
+현재 배포 파일은 **배포자 코드 서명·Apple 공증이 없어** 운영체제의 실행 경고나 차단이 나타날 수 있습니다. 자세한 실행 조건은 [배포 안내](RELEASE-NOTES.md)를 확인하세요. 이전 버전과 변경 사항은 [전체 Releases](https://github.com/sin871220/File-Tripitaka/releases)에 모아 둡니다.
 
 ## 이렇게 둘러보세요
 
 | 기능 | 할 수 있는 일 |
 |---|---|
-| **폴더 전체를 한 화면에** | 선택한 폴더와 하위 폴더의 압축파일을 모아 보고, 파일명 검색과 이름·수정 날짜 정렬로 좁혀 갑니다. |
+| **폴더 전체를 한 화면에** | 선택한 폴더와 하위 폴더의 압축파일·이미지 폴더를 모아 보고, 종류 필터와 이름·수정 날짜·용량 정렬로 좁혀 갑니다. |
 | **표지와 본문을 함께** | 기본 1장 보기에서 2장·3장 보기로 바꾸면 여러 이미지를 나란히 확인할 수 있습니다. |
-| **썸네일 영역 편집** | 압축파일 안의 이미지와 표시할 영역을 직접 골라 저장합니다. 1장·2장·3장 보기의 각 위치를 따로 편집할 수 있습니다. |
-| **파일별 즐겨찾기** | 폴더가 달라도 즐겨찾기 탭에서 한꺼번에 확인합니다. 전체 탭에서는 오른쪽 위 노란 별로 구분합니다. |
+| **썸네일 영역 편집** | 압축파일·폴더 안의 이미지와 표시할 영역을 직접 골라 저장합니다. 1장·2장·3장 보기의 각 위치를 따로 편집할 수 있습니다. |
+| **파일별 즐겨찾기** | 폴더가 달라도 즐겨찾기 탭에서 한꺼번에 확인합니다. 전체·폴더 탭에서는 설정한 위치와 크기의 별로 구분합니다. |
 | **파일 정리** | 우클릭 메뉴와 F2로 이름을 바꾸고, Delete로 확인 후 휴지통에 보냅니다. 이름을 바꿔도 즐겨찾기를 유지합니다. |
 | **끊김을 줄인 탐색** | 휠 입력에 맞춰 부드럽게 스크롤합니다. 화면 근처의 카드만 표시하며, 탭마다 스크롤 위치를 기억합니다. |
+| **자주 찾는 폴더를 탭으로** | 즐겨찾는 폴더를 탭으로 열고, 탭마다 검색·정렬·선택·스크롤 위치를 따로 기억합니다. |
+| **썸네일 위 표시** | 별·폴더·페이지 수의 표시 여부·위치·순서·크기와 페이지 글씨·배경 색·투명도를 설정합니다. |
 | **내 화면에 맞게** | 사이드바 접기, 창 너비 맞춤, 네 가지 테마와 글꼴·글자 크기, 카드 표시 항목을 설정합니다. |
 
 ## 처음 사용하기
 
 1. **폴더 선택**을 눌러 압축파일이 있는 폴더를 고르세요. 하위 폴더까지 모아 보는 옵션은 기본으로 켜져 있습니다.
-2. **전체** 탭에서 썸네일을 둘러보세요. 파일명으로 검색하거나 이름·수정 날짜 순으로 정렬할 수 있습니다.
+2. **전체** 탭에서 썸네일을 둘러보세요. 파일명으로 검색하고 종류로 걸러 보거나 이름·수정 날짜·용량 순으로 정렬할 수 있습니다.
 3. 자주 찾는 파일은 **오른쪽 클릭 → 즐겨찾기 추가**로 모아 두세요. **즐겨찾기** 탭은 현재 폴더와 관계없이 모든 파일 즐겨찾기를 보여 줍니다.
 4. **설정 → 열기 동작**에서 더블클릭 동작과 뷰어 경로를 고르세요. **설정 → 단축키**에서는 기능별로 키를 지정합니다. Windows에서는 꿀뷰나 다른 뷰어를, Mac에서는 기본 앱이나 다른 뷰어를 연결할 수 있습니다.
 
@@ -98,7 +100,7 @@ Mac의 기본 더블클릭 동작은 **Finder에서 파일 위치 열기**입니
 
 ### 1장·2장·3장 미리보기
 
-현재 소스 테스트 버전 **1.3.0-beta.16**에서는 이미지가 직접 들어 있는 폴더도 카드로 모아 봅니다. **종류 → 전체 / 압축파일 / 폴더**로 고르고 검색·정렬을 함께 사용하세요. 정렬은 **이름 ▲·▼ / 수정 날짜 ▲·▼ / 용량 ▲·▼**, 배치는 **섞어서 / 폴더 먼저 / 파일 먼저**에서 고릅니다. ▲·▼를 바꿔도 그룹 순서는 유지하고 각 그룹 내부에서 정렬합니다. 기본 배치는 섞어서이며, 종류를 하나만 표시할 때는 배치 선택이 비활성화됩니다. 탭별 선택과 스크롤 위치는 다시 열 때도 기억합니다. 폴더 카드에는 작은 폴더 표시가 있으며, 아래의 1장·2장·3장 미리보기·즐겨찾기·영역 편집을 그대로 사용합니다. 폴더 즐겨찾기는 왼쪽의 탐색 폴더 즐겨찾기와 별개로 전역 즐겨찾기 탭에 모입니다. 페이지 수 정렬과 전체 목록의 개수 계산은 제거했습니다. 이전 페이지 수 정렬 설정은 이름 ▲로 전환하며, 썸네일의 페이지 수 표시는 유지합니다. 용량은 카드에 표시된 값을 사용합니다.
+**1.3.0**에서는 이미지가 직접 들어 있는 폴더도 카드로 모아 봅니다. **종류 → 전체 / 압축파일 / 폴더**로 고르고 검색·정렬을 함께 사용하세요. 정렬은 **이름 ▲·▼ / 수정 날짜 ▲·▼ / 용량 ▲·▼**, 배치는 **섞어서 / 폴더 먼저 / 파일 먼저**에서 고릅니다. ▲·▼를 바꿔도 그룹 순서는 유지하고 각 그룹 내부에서 정렬합니다. 기본 배치는 섞어서이며, 종류를 하나만 표시할 때는 배치 선택이 비활성화됩니다. 탭별 선택과 스크롤 위치는 다시 열 때도 기억합니다. 폴더 카드에는 작은 폴더 표시가 있으며, 아래의 1장·2장·3장 미리보기·즐겨찾기·영역 편집을 그대로 사용합니다. 폴더 즐겨찾기는 왼쪽의 탐색 폴더 즐겨찾기와 별개로 전역 즐겨찾기 탭에 모입니다. 페이지 수 정렬과 전체 목록의 개수 계산은 제거했습니다. 이전 페이지 수 정렬 설정은 이름 ▲로 전환하며, 썸네일의 페이지 수 표시는 유지합니다. 용량은 카드에 표시된 값을 사용합니다.
 
 **폴더 탭:** 즐겨찾기 바로 오른쪽의 **＋**에서 즐겨찾는 폴더를 골라 별도 탭으로 엽니다. 이미 열린 폴더는 메뉴에 **✓**로 표시합니다. **전체·즐겨찾기·＋는 고정**하고 폴더 탭만 휠·좌우 버튼으로 가로 이동합니다. 좌우 버튼은 탭이 영역을 넘을 때만 나타나며, 폴더 탭을 드래그해 순서를 바꿀 수 있습니다. 전체 탭의 기준 폴더는 유지하며, 각 폴더 탭의 검색·정렬·종류·배치·선택·스크롤 위치를 따로 기억합니다. 탭 순서·활성 탭·보기 상태는 재실행해도 복원하고, **×**로 닫아도 실제 폴더와 파일 즐겨찾기는 유지합니다.
 
@@ -193,7 +195,7 @@ Windows 소스 실행은 **새 버전 ZIP을 새 폴더에 전부 푼 뒤 그 �
 
 공유폴더를 통해 다른 Windows 컴퓨터로 옮겨 테스트할 때는 `python scripts/package_windows_test.py`로 **Windows-Test.zip 하나**를 만들 수 있습니다. 코드·아이콘·글꼴과 실행 배치가 한 버전 폴더에 들어가며, Git 미추적 신규 모듈도 포함합니다. ZIP 전체를 옮겨 새 폴더에 푼 뒤 그 안의 배치를 실행하세요. 이 테스트 ZIP에는 Python이나 EXE가 포함되지 않습니다.
 
-**배포 ZIP과 소스 테스트 ZIP은 다릅니다.** GitHub Releases의 `Windows-x64`·`macOS-arm64`·`macOS-x86_64` 패키지는 Python을 포함합니다. `python scripts/package_windows_test.py`로 만드는 현재 소스 테스트 `File-Tripitaka-v1.3.0-beta.16-Windows-Test.zip`은 소스 실행용이므로 Windows용 Python 3.12 이상을 따로 설치해야 합니다. 현재 공개 배포 버전은 1.2.5입니다.
+**배포 ZIP과 소스 테스트 ZIP은 다릅니다.** GitHub Releases의 `Windows-x64`·`macOS-arm64`·`macOS-x86_64` 패키지는 Python을 포함합니다. `python scripts/package_windows_test.py`로 별도로 만드는 `Windows-Test.zip`은 소스 실행용이므로 Windows용 Python 3.12 이상을 따로 설치해야 합니다. 현재 공개 배포 버전은 1.3.0입니다.
 
 - Windows: 소스 실행은 `run-windows.bat`, 배포 빌드는 `build-windows.bat`.
 - macOS: `build-macos.sh`. Apple Silicon과 Intel은 해당 CPU용 Python 환경에서 각각 빌드합니다.
@@ -210,6 +212,12 @@ python tests/scroll_smoke.py
 python tests/wheel_routing_smoke.py
 python tests/folder_gallery_smoke.py
 python tests/gallery_card_smoke.py
+python tests/tab_bar_smoke.py
+python tests/folder_tabs_smoke.py
+python tests/sidebar_split_smoke.py
+python tests/sidebar_layout_smoke.py
+python tests/favorite_folder_list_smoke.py
+python tests/favorite_folders_smoke.py
 ```
 
 패키징된 앱은 `--self-test --report <JSON 경로>`로 ZIP 처리·네이티브 디코더·Tk GUI·언어 전환을 점검할 수 있습니다. 자동 점검이 모든 기기에서의 실사용 검증을 대신하지는 않습니다.
