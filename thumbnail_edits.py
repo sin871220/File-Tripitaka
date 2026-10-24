@@ -122,7 +122,12 @@ def _folder_signature(path, cancel=None):
             if Path(child.name).suffix.casefold() not in _IMAGE_SUFFIXES:
                 continue
             try:
-                info = child.stat(follow_symlinks=False)
+                # Windows DirEntry.stat may use cached enumeration metadata
+                # whose device/file IDs are zero. Fingerprinting rechecks the
+                # path and open handle, so gather the same full path identity
+                # here instead of comparing those different stat APIs later.
+                # lstat still excludes linked images from the snapshot.
+                info = (path / child.name).lstat()
             except FileNotFoundError as error:
                 raise ThumbnailFileChangedError('Image disappeared while listing folder') from error
             if stat.S_ISREG(info.st_mode):

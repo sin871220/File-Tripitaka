@@ -244,12 +244,19 @@ class WheelRoutingSmoke(unittest.TestCase):
         self.wheel(app.favorite_list)
         self.assertGreater(app.favorite_list.yview()[0], before)
         self.assertAlmostEqual(app.canvas.canvasy(0), gallery, delta=1)
+        # The CI desktop can leave fewer than three rows in the default 32%
+        # pane. Give this fits-without-scrollbar fixture the expanded area.
+        app.toggle_sidebar_section('tree')
+        self.pump()
         app.favorite_list.delete(*app.favorite_list.get_children())
         for index in range(3):
             app.favorite_list.insert('', 'end', text=f'Few example folders {index}')
+        app.favorite_list.yview_moveto(0)
         app.update()
+        self.assertEqual(app.favorite_list.yview(), (0.0, 1.0),
+                         'The expanded favorite pane must fit all three fixture rows')
         self.assertFalse(app.favorite_scrollbar.winfo_ismapped(),
-                         'A short favorite folder list must not reserve a scrollbar')
+                         'A fully visible favorite folder list must not reserve a scrollbar')
         self.assertAlmostEqual(app.canvas.canvasy(0), gallery, delta=1)
 
     def test_native_scrollbars_operate_their_own_views(self):

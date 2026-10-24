@@ -1,5 +1,6 @@
 """Folder crops follow verified image contents without changing source folders."""
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -7,6 +8,7 @@ from pathlib import Path
 import shutil
 import tempfile
 import threading
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -38,6 +40,58 @@ class FolderEdits(unittest.TestCase):
     def source_bytes(self, folder=None):
         return {child.name: child.read_bytes() for child in (folder or self.folder).iterdir()
                 if child.is_file()}
+
+    @contextmanager
+    def windows_cached_directory_stats(self):
+        """Emulate Win32 enumeration metadata with no device/file identity."""
+        real_scandir = os.scandir
+
+        @contextmanager
+        def cached_listing(path):
+            with real_scandir(path) as listing:
+                entries = []
+                for child in listing:
+                    info = child.stat(follow_symlinks=False)
+                    cached = SimpleNamespace(st_mode=info.st_mode, st_size=info.st_size,
+                        st_mtime_ns=info.st_mtime_ns, st_ctime_ns=info.st_ctime_ns,
+                        st_dev=0, st_ino=0)
+                    entries.append(SimpleNamespace(name=child.name,
+                        stat=lambda *args, _cached=cached, **kwargs: _cached))
+                yield iter(entries)
+
+        with patch('thumbnail_edits.os.scandir', side_effect=cached_listing):
+            yield
+
+    def test_windows_directory_cached_ids_allow_save_restart_copy_and_reset(self):
+        original = self.source_bytes()
+        duplicate = self.root / 'Copied album'
+        shutil.copytree(self.folder, duplicate)
+        with self.windows_cached_directory_stats():
+            self.save()
+            self.assertEqual(self.store.get(self.folder)['0']['box'], self.box)
+            restarted = ThumbnailEditStore(self.database)
+            self.assertEqual(restarted.get(duplicate), restarted.get(self.folder))
+            snapshot = dict(edits._folder_signature(self.folder)[2])
+            for name, signature in snapshot.items():
+                self.assertEqual(signature, edits._file_signature(self.folder / name))
+            self.assertTrue(restarted.reset(duplicate, 0))
+            self.assertIsNone(self.store.get(self.folder))
+        self.assertEqual(self.source_bytes(), original)
+
+    def test_windows_directory_cached_ids_do_not_hide_same_size_file_replacement(self):
+        with self.windows_cached_directory_stats():
+            self.save()
+            signature = edits._folder_signature(self.folder)
+            image = self.folder / 'page-1.png'
+            info = image.stat()
+            replacement = self.root / 'replacement.png'
+            replacement.write_bytes(b'x' * info.st_size)
+            os.utime(replacement, ns=(info.st_atime_ns, info.st_mtime_ns))
+            replacement.replace(image)
+            with self.assertRaises(ThumbnailFileChangedError):
+                edits._folder_digest(self.folder, signature, full=True)
+            self.assertIsNone(self.store.get(self.folder))
+            self.assertIsNone(ThumbnailEditStore(self.database).get(self.folder))
 
     def test_three_slots_deep_copy_and_sources_are_never_changed(self):
         original = self.source_bytes()

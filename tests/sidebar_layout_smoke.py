@@ -285,6 +285,8 @@ class SidebarLayoutSmoke(unittest.TestCase):
         app.folder_favorites = app.folder_favorites[:3]
         app.refresh_favorite_folders()
         self.pump()
+        self.assertEqual(app.favorite_list.yview(), (0.0, 1.0),
+                         'The expanded favorite pane must fit all three fixture rows')
         self.assertFalse(app.favorite_scrollbar.winfo_ismapped())
 
     def test_scrollbar_retains_full_width_in_narrow_panes_and_after_visibility_changes(self):
@@ -311,12 +313,21 @@ class SidebarLayoutSmoke(unittest.TestCase):
                     app.toggle_sidebar_section(key)
                     self.pump()
                     self.assert_favorite_scrollbar_visible()
+                # A small CI screen may leave only one or two rows in the
+                # default split. Expand before testing the fully-fitting case.
+                app.toggle_sidebar_section('tree')
+                self.pump()
                 app.folder_favorites = folders[:3]
                 app.refresh_favorite_folders()
                 self.pump()
+                self.assertEqual(app.favorite_list.yview(), (0.0, 1.0),
+                                 'The expanded favorite pane must fit all three fixture rows')
                 self.assertFalse(app.favorite_scrollbar.winfo_ismapped())
                 app.folder_favorites = list(folders)
                 app.refresh_favorite_folders()
+                self.pump()
+                self.assert_favorite_scrollbar_visible()
+                app.toggle_sidebar_section('tree')
                 self.pump()
                 self.assert_favorite_scrollbar_visible()
         for geometry in ('1000x660', '1200x800', '1120x760'):
