@@ -158,16 +158,28 @@ class FavoriteFolderListSmoke(unittest.TestCase):
                 item = self.listing.identify_row(self.listing.winfo_height() // 2)
                 self.assertTrue(item)
                 self.press(item)
+                initial_index = self.listing.index(item)
                 initial_view = self.listing.yview()[0]
                 y = -5 if direction < 0 else self.listing.winfo_height() + 5
                 self.move(35, y)
                 first_index = self.listing.index(item)
                 self.assertGreater(first_index, 0)
                 self.assertLess(first_index, 79)
+                if direction < 0:
+                    self.assertLess(first_index, initial_index)
+                else:
+                    self.assertGreater(first_index, initial_index)
                 self.assertEqual(self.orders, [])
-                deadline = time.monotonic() + .18
+                # Wait for observable progress, rather than assuming two timer
+                # callbacks fit into a fixed 180 ms on a shared CI desktop.
+                deadline = time.monotonic() + 1.5
                 while time.monotonic() < deadline:
                     self.root.update()
+                    current_view = self.listing.yview()[0]
+                    current_index = self.listing.index(item)
+                    if ((current_view - initial_view) * direction > 0
+                            and (current_index - first_index) * direction > 0):
+                        break
                     time.sleep(.01)
                 final_index = self.listing.index(item)
                 self.assertLessEqual(abs(final_index - first_index), 4)
@@ -180,6 +192,37 @@ class FavoriteFolderListSmoke(unittest.TestCase):
                 self.assertEqual(self.listing.selection(), (item,))
                 self.listing.cancel_drag(restore=True)
                 self.root.update()
+
+    def test_outside_hits_to_offscreen_rows_use_visible_boundary_instead(self):
+        original_identify = self.listing.identify_row
+        try:
+            for direction in (-1, 1):
+                with self.subTest(direction=direction):
+                    self.listing.identify_row = original_identify
+                    self.populate(80)
+                    self.listing.yview_moveto(.4)
+                    self.root.update()
+                    item = original_identify(self.listing.winfo_height() // 2)
+                    self.press(item)
+                    initial_index = self.listing.index(item)
+                    height = self.listing.winfo_height()
+                    hidden = '0' if direction < 0 else '79'
+                    self.assertFalse(self.listing.bbox(hidden))
+                    # Tk 8.6 may report an offscreen item for an outside y.
+                    self.listing.identify_row = lambda y: hidden if y < 0 or y >= height else original_identify(y)
+                    self.move(35, -5 if direction < 0 else height + 5)
+                    moved = self.listing.index(item)
+                    self.assertGreater(moved, 0)
+                    self.assertLess(moved, 79)
+                    if direction < 0:
+                        self.assertLess(moved, initial_index)
+                    else:
+                        self.assertGreater(moved, initial_index)
+                    self.assertEqual(self.listing.selection(), (item,))
+                    self.assertEqual(self.orders, [])
+                    self.listing.cancel_drag(restore=True)
+        finally:
+            self.listing.identify_row = original_identify
 
 
 if __name__ == '__main__':

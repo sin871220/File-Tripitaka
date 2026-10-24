@@ -86,11 +86,21 @@ class FavoriteFolderList(ttk.Treeview):
         rows = list(self.get_children(''))
         if item not in rows:
             return
-        target = self.identify_row(self._pointer_y)
         remaining = [row for row in rows if row != item]
-        if not remaining or target == item:
+        if not remaining:
             return
-        if target in remaining:
+        height = self.winfo_height()
+        outside = -1 if self._pointer_y < 0 else 1 if self._pointer_y >= height else 0
+        # Older Tk versions can identify a row beyond the visible viewport.
+        # Resolve outside positions first, before accepting any such row hit.
+        target = self._visible_boundary_row(outside) if outside else self.identify_row(self._pointer_y)
+        if target == item:
+            return
+        if outside:
+            if target not in remaining:
+                return
+            index = remaining.index(target) + int(outside > 0)
+        elif target in remaining:
             box = self.bbox(target)
             if not box:
                 return
@@ -115,15 +125,17 @@ class FavoriteFolderList(ttk.Treeview):
             self.move(item, '', index)
 
     def _visible_boundary_row(self, direction):
-        # identify_row is empty outside the viewport and over a header/border.
         # Search inward from the edge, rather than jumping to the global first
-        # or last row of a partially scrolled list.
+        # or last row. Some Tk versions also hit offscreen rows at the border,
+        # so accept a row only when its box intersects the visible viewport.
         height = self.winfo_height()
         positions = range(1, height) if direction < 0 else range(height - 2, -1, -1)
         for y in positions:
             item = self.identify_row(y)
             if item and not self.parent(item):
-                return item
+                box = self.bbox(item)
+                if box and box[3] > 0 and box[1] < height and box[1] + box[3] > 0:
+                    return item
         return None
 
     def _scroll_direction(self):
