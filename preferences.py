@@ -147,6 +147,10 @@ class Preferences:
         tint(self)
         for _, card, _, _ in getattr(self, 'cards', {}).values():
             card.set_theme(p, (self.ui_font, self.font_size))
+        if hasattr(getattr(self, 'tabs', None), 'set_theme'):
+            self.tabs.set_theme(p, (self.ui_font, self.font_size))
+        if hasattr(self, 'sidebar_split'):
+            self.sidebar_split.set_theme(p)
         if hasattr(self, 'apply_titlebar_theme'):
             self.after_idle(self.apply_titlebar_theme)
 
@@ -238,7 +242,8 @@ class Preferences:
                 raise ValueError('설치된 글꼴 목록에서 선택해 주세요.')
         if typography is not None:
             self.remember_position()
-            font_view = self.views.get(self.current_folder, {}).copy()
+            font_view = (self.current_view() if hasattr(self, 'current_view')
+                         else self.views.get(self.current_folder, {}).copy())
             self.settings.update(font_family=family, font_size=size)
             self.font_size = size
             self.ui_font = configure_fonts(self, family, size)

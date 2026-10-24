@@ -13,11 +13,11 @@ except ImportError:
     from build_release import identity
 
 ROOT = Path(__file__).resolve().parents[1]
-REQUIRED = ('app.py', 'brand.py', 'archive_core.py', 'library_items.py', 'preferences.py', 'localization.py',
+REQUIRED = ('app.py', 'brand.py', 'archive_core.py', 'library_items.py', 'folder_tabs.py', 'folder_tab_bar.py', 'preferences.py', 'localization.py',
             'viewer.py', 'windows_shell.py', 'file_operations.py', 'shortcuts.py',
             'runtime_check.py', 'thumbnail_worker.py', 'large_thumbnail.py',
             'thumbnail_editor.py', 'thumbnail_edits.py', 'thumbnail_overlays.py', 'smooth_scroll.py', 'gallery_card.py',
-            'desktop_shortcuts.py', 'tree_icons.py', 'ui_fonts.py', 'dialog_geometry.py',
+            'desktop_shortcuts.py', 'tree_icons.py', 'ui_fonts.py', 'dialog_geometry.py', 'sidebar_split.py', 'favorite_folder_list.py',
             'run-windows.bat', 'requirements.txt', 'assets/app.ico', 'assets/app.png',
             'fonts/NotoSansCJKkr-Regular.otf', 'fonts/OFL.txt', 'fonts/SOURCE.txt')
 
@@ -58,6 +58,18 @@ def package(root=ROOT, output=None):
 2. 새 폴더에 압축을 전부 푸세요. 예전 버전 폴더에 덮어 풀지 마세요.
 3. 압축을 푼 폴더 안의 run-windows.bat을 실행하세요.
 4. 제목 표시줄의 v{version}을 확인하세요.
+
+즐겨찾는 폴더 탭
+- 즐겨찾는 폴더를 위아래로 드래그해 순서를 바꾸세요. 목록 끝에서는 자동 스크롤하고 Escape로 변경을 취소합니다. 순서는 ＋ 메뉴와 재실행에도 반영합니다.
+- 제거 버튼을 누르면 폴더 이름과 '(탭도 같이 삭제됩니다)' 확인창이 나옵니다. 예는 즐겨찾는 폴더와 해당 탭 제거, 아니오는 취소입니다. 실제 폴더·파일과 파일별 즐겨찾기는 유지합니다.
+- 왼쪽 즐겨찾는 폴더와 폴더 탐색 사이의 구분선을 위아래로 드래그해 높이를 조절하세요. 어느 쪽을 접어도 다른 쪽이 남은 공간을 채웁니다. 다시 펼치거나 재실행해도 이전 분할 비율을 기억합니다.
+- 왼쪽 즐겨찾는 폴더 목록은 길어지면 세로 스크롤바가 나타납니다. 목록이 모두 들어오면 숨기며 휠·스크롤바는 해당 목록만 움직입니다.
+- 사이드바가 좁아져도 스크롤바 너비를 확보해 목록 오른쪽에 표시합니다.
+- ★ 즐겨찾기 바로 오른쪽의 ＋를 눌러 왼쪽 즐겨찾는 폴더 목록에서 고르면 폴더 탭이 추가됩니다. 이미 열린 폴더는 ✓로 표시하며 선택하면 기존 탭으로 이동합니다.
+- 전체 / ★ 즐겨찾기 / ＋는 항상 고정하고, 추가한 폴더 탭만 휠이나 좌우 버튼으로 가로 이동합니다. 좌우 버튼은 탭이 영역을 넘을 때만 표시하고 모두 들어오면 숨깁니다. 선택한 탭은 자동으로 보이며 ×로 닫습니다.
+- 폴더 탭을 좌우로 드래그해 순서를 바꾸면 다시 실행해도 기억합니다. 전체 / ★ 즐겨찾기 / ＋는 드래그로 옮기지 않습니다.
+- 전체 탭의 기준 폴더는 유지합니다. 폴더 탭마다 폴더·검색·정렬·종류·배치·선택·스크롤 위치를 따로 기억하고 다시 실행해도 복원합니다.
+- 탭을 닫아도 폴더나 파일 즐겨찾기는 삭제되지 않습니다. 파일 즐겨찾기는 기존처럼 전역 ★ 즐겨찾기 탭에서 모아 볼 수 있습니다.
 
 썸네일 위 표시 설정
 - 설정 → 표시 설정 → 썸네일 위 표시에서 즐겨찾기 별 / 폴더 아이콘 / 페이지 수를 각각 표시하거나 숨기고 네 모서리 중 위치를 고르세요.

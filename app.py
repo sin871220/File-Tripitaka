@@ -41,6 +41,10 @@ from shortcuts import migrate as migrate_shortcuts, validate as validate_shortcu
 from smooth_scroll import SmoothScroller, wheel_pixels
 from gallery_card import GalleryCard
 from thumbnail_overlays import normalize_overlay_settings, normalize_overlay_order
+from folder_tabs import normalize_folder_tabs, normalize_active_tab, new_folder_tab, tab_label, tab_path_key
+from folder_tab_bar import LibraryTabBar
+from sidebar_split import SidebarSplit
+from favorite_folder_list import FavoriteFolderList
 
 DATA = (Path(os.environ['LOCALAPPDATA']) / 'ArchiveShelf' if os.environ.get('LOCALAPPDATA') else
         Path.home() / 'Library/Application Support/File Tripitaka' if sys.platform == 'darwin' else
@@ -93,9 +97,22 @@ class App(Preferences, tk.Tk):
         self.refresh_shortcuts()
         self.history = []
         self.current_folder = self.settings.get('folder', '')
+        self.all_folder = self.current_folder
+        self.folder_tabs = normalize_folder_tabs(self.settings.get('folder_tabs', []))
+        saved_folder_views = self.settings.get('folder_tab_views', {})
+        self.folder_tab_views = {tab['id']: dict(saved_folder_views.get(tab['id'], {}))
+                                 for tab in self.folder_tabs
+                                 if isinstance(saved_folder_views, dict)
+                                 and isinstance(saved_folder_views.get(tab['id'], {}), dict)}
         self.views = self.settings.get('views', {})
         self.tab_views = self.settings.get('tab_views', {})
-        self.active_tab = 'favorites' if self.settings.get('only_favorites', False) else 'all'
+        self.active_tab = normalize_active_tab(self.settings.get('active_library_tab'), self.folder_tabs,
+                                               self.settings.get('only_favorites', False))
+        active_folder = next((tab for tab in self.folder_tabs if tab['id'] == self.active_tab), None)
+        if active_folder is not None:
+            self.current_folder = active_folder['path']
+        self._loaded_folder = None
+        self._loading_tab = None
         self.favorites = set(self.settings.get('file_favorites', []))
         self.folder_favorites = self.settings.get('folder_favorites', [])
         self.metadata = {}
@@ -127,14 +144,14 @@ class App(Preferences, tk.Tk):
         self.selected_path = None
         self.photos = {}
         self.preview_errors = set()
-        self.folder = tk.StringVar(value=self.settings.get('folder', ''))
+        self.folder = tk.StringVar(value=self.current_folder)
         self.recursive = tk.BooleanVar(value=self.settings.get('recursive', True))
         self.query = tk.StringVar()
         kind_filter = self.settings.get('kind_filter', '전체')
         self.kind_filter = tk.StringVar(value=kind_filter if kind_filter in KIND_FILTERS else '전체')
         group_order = self.settings.get('group_order', '섞어서')
         self.group_order = tk.StringVar(value=group_order if group_order in ARRANGEMENTS else '섞어서')
-        self.only_favorites = tk.BooleanVar(value=self.settings.get('only_favorites', False))
+        self.only_favorites = tk.BooleanVar(value=self.active_tab == 'favorites')
         self.thumb_size = tk.IntVar(value=max(120, min(320, int(self.settings.get('thumb_size', 190)))))
         self.sort_order = tk.StringVar(value=normalize_sort_order(self.settings.get('sort')))
         self.fit_columns = None
@@ -160,24 +177,36 @@ class App(Preferences, tk.Tk):
         panes.add(sidebar, weight=0)
         self.sidebar_sections = {}
         self.tree_icons = navigation_icons(self)
-        favorite_section = ttk.Frame(sidebar)
-        favorite_section.pack(fill='x')
+        self.sidebar_split = SidebarSplit(sidebar,
+            ratio=self.settings.get('sidebar_split_ratio', .32), on_change=self.sidebar_split_changed)
+        self.sidebar_split.pack(fill='both', expand=True)
+        favorite_section = ttk.Frame(self.sidebar_split, cursor='arrow')
         favorite_header = ttk.Button(favorite_section, text=tr('즐겨찾는 폴더'), style='Section.TButton',
                                      command=lambda: self.toggle_sidebar_section('favorites'))
         favorite_header.pack(fill='x')
         favorite_body = ttk.Frame(favorite_section)
-        self.favorite_list = ttk.Treeview(favorite_body, height=5, show='tree', selectmode='browse')
+        favorite_list_area = ttk.Frame(favorite_body)
+        favorite_list_area.pack(fill='both', expand=True, pady=5)
+        favorite_list_area.rowconfigure(0, weight=1)
+        favorite_list_area.columnconfigure(0, weight=1)
+        self.favorite_list = FavoriteFolderList(favorite_list_area, height=5, show='tree', selectmode='browse',
+                                                on_reorder=self.reorder_favorite_folders)
         self.favorite_list.column('#0', width=180, minwidth=40)
-        self.favorite_list.pack(fill='x', pady=5)
-        self.favorite_list.bind('<ButtonRelease-1>', self.open_favorite_folder)
+        self.favorite_scrollbar = ttk.Scrollbar(favorite_list_area, orient='vertical', command=self.favorite_list.yview)
+        # Reserve the scrollbar's width before shrinking the list. Packing the
+        # list first can leave no room for a later scrollbar in a narrow pane.
+        self.favorite_scrollbar.grid(row=0, column=1, sticky='ns')
+        self.favorite_scrollbar.grid_remove()
+        self.favorite_list.configure(yscrollcommand=self.update_favorite_scrollbar)
+        self.favorite_list.grid(row=0, column=0, sticky='nsew')
+        self.favorite_list.bind('<ButtonRelease-1>', self.open_favorite_folder, add='+')
         self.favorite_list.bind('<Return>', self.open_favorite_folder)
         self.favorite_list.bind('<Motion>', self.show_favorite_folder_path)
-        folder_buttons = ttk.Frame(favorite_body)
-        folder_buttons.pack(fill='x')
+        folder_buttons = self.favorite_folder_buttons = ttk.Frame(favorite_body)
+        folder_buttons.pack(side='bottom', fill='x', before=favorite_list_area)
         ttk.Button(folder_buttons, text=tr('현재 폴더 추가'), command=self.favorite_folder).pack(side='left')
         ttk.Button(folder_buttons, text=tr('제거'), command=self.remove_favorite_folder).pack(side='left')
-        tree_section = ttk.Frame(sidebar)
-        tree_section.pack(fill='both', expand=True, pady=(14, 0))
+        tree_section = ttk.Frame(self.sidebar_split, cursor='arrow')
         tree_header = ttk.Button(tree_section, text=tr('폴더 탐색'), style='Section.TButton',
                                  command=lambda: self.toggle_sidebar_section('tree'))
         tree_header.pack(fill='x')
@@ -186,7 +215,7 @@ class App(Preferences, tk.Tk):
         self.tree = ttk.Treeview(tree_body, show='tree', selectmode='browse')
         self.tree._is_folder_tree = True
         self.tree._folder_paths = self.tree_paths
-        tree_scroll = ttk.Scrollbar(tree_body, orient='vertical', command=self.tree.yview)
+        tree_scroll = self.tree_scrollbar = ttk.Scrollbar(tree_body, orient='vertical', command=self.tree.yview)
         self.tree.configure(yscrollcommand=tree_scroll.set)
         tree_scroll.pack(side='right', fill='y')
         self.tree.pack(fill='both', expand=True)
@@ -197,19 +226,26 @@ class App(Preferences, tk.Tk):
         self.tree.bind('<Return>', self.open_tree_folder)
         collapsed = self.settings.get('sidebar_collapsed', {})
         self.sidebar_sections = {
-            'favorites': dict(body=favorite_body, header=favorite_header, title=tr('즐겨찾는 폴더'), collapsed=bool(collapsed.get('favorites', False))),
-            'tree': dict(body=tree_body, header=tree_header, title=tr('폴더 탐색'), collapsed=bool(collapsed.get('tree', False))),
+            'favorites': dict(frame=favorite_section, body=favorite_body, header=favorite_header,
+                              footer=folder_buttons, title=tr('즐겨찾는 폴더'), collapsed=bool(collapsed.get('favorites', False))),
+            'tree': dict(frame=tree_section, body=tree_body, header=tree_header,
+                         title=tr('폴더 탐색'), collapsed=bool(collapsed.get('tree', False))),
         }
+        self.sidebar_split.set_sections(favorite_section, tree_section, favorite_header, tree_header,
+                                         favorite_footer=folder_buttons)
         for key in self.sidebar_sections:
             self.render_sidebar_section(key)
         body = ttk.Frame(panes)
         panes.add(body, weight=1)
         if self.sidebar_hidden:
             panes.forget(sidebar)
-        self.tabs = ttk.Notebook(body, height=1)
-        self.tabs.add(ttk.Frame(self.tabs), text=tr('전체'))
-        self.tabs.add(ttk.Frame(self.tabs), text=tr('★ 즐겨찾기'))
-        self.tabs.select(1 if self.active_tab == 'favorites' else 0)
+        self.tabs = LibraryTabBar(body, on_add=self.show_folder_tab_menu,
+                                  on_close=self.close_folder_tab,
+                                  on_reorder=self.reorder_folder_tabs,
+                                  on_hover=lambda path: self.status.set(str(path))
+                                  if path is not None and hasattr(self, 'status') else None)
+        self.refresh_folder_tabs()
+        self.tabs.select(self.active_tab)
         self.tabs.pack(fill='x', padx=10, pady=(0, 5))
         self.tabs.bind('<<NotebookTabChanged>>', self.switch_tab)
         filters = ttk.Frame(body, padding=(10, 0, 10, 10))
@@ -295,8 +331,20 @@ class App(Preferences, tk.Tk):
         self.after(100, self.poll)
         self.refresh_favorite_folders()
         self.load_favorite_metadata()
-        if self.folder.get():
-            self.pending_restore = self.views.get(self.current_folder)
+        startup_view = self.current_view() or dict(sort=self.sort_order.get(),
+            kind_filter=self.kind_filter.get(), group_order=self.group_order.get())
+        if self.active_tab == 'favorites':
+            self.populate_tree(Path(self.all_folder) if self.all_folder else Path.home())
+            view = dict(startup_view, favorites=True)
+            self.restore_view_controls(view)
+            self.apply_search()
+            self.restore_position(view)
+            if self.current_folder and Path(self.current_folder).is_dir():
+                self.pending_restore = view
+                self.scan(source_for_favorites=True)
+        elif self.folder.get() and Path(self.current_folder).is_dir():
+            self.pending_restore = dict(startup_view, favorites=False)
+            self.restore_view_controls(self.pending_restore)
             self.populate_tree(Path(self.current_folder))
             self.scan()
         else:
@@ -308,6 +356,7 @@ class App(Preferences, tk.Tk):
         set_language(self.settings.get('language', 'ko'))
         self.title(f"{tr(APP_NAME)} v{APP_VERSION}")
         localize_widgets(self)
+        self.tabs.set_base_labels(tr('전체'), tr('★ 즐겨찾기'))
         self.status.set(tr(self.status.get()))
         self.refresh_card_labels()
         for _, _, thumbnail, _ in self.cards.values():
@@ -344,7 +393,7 @@ class App(Preferences, tk.Tk):
         self.display_size = self.thumb_size.get()
         self.sampling_control.configure(state='disabled' if self.preview_count.get() == '1장' else 'readonly')
         self.remember_position()
-        view = self.views.get(self.current_folder, {}).copy()
+        view = self.current_view()
         self.settings['preview_count'] = int(self.preview_count.get()[0])
         self.settings['preview_sampling'] = self.preview_sampling.get()
         self.apply_search()
@@ -503,7 +552,13 @@ class App(Preferences, tk.Tk):
         section['header'].configure(text=('▶  ' if collapsed else '▼  ') + tr(section['title']))
         section['body'].pack_forget()
         if not collapsed:
-            section['body'].pack(fill='both' if key == 'tree' else 'x', expand=key == 'tree', pady=(6, 0))
+            section['body'].pack(fill='both', expand=True, pady=(6, 0))
+        self.sidebar_split.set_collapsed(self.sidebar_sections['favorites']['collapsed'],
+                                         self.sidebar_sections['tree']['collapsed'])
+
+    def sidebar_split_changed(self, ratio):
+        self.settings['sidebar_split_ratio'] = ratio
+        self.save()
 
     def toggle_sidebar_section(self, key):
         section = self.sidebar_sections[key]
@@ -537,6 +592,16 @@ class App(Preferences, tk.Tk):
 
     def remember_position(self):
         self.smooth_scroll.stop()
+        if self._loading_tab == self.active_tab and self.pending_restore is not None:
+            view = dict(self.pending_restore)
+            controls = dict(query=self.query.get(), sort=self.sort_order.get(),
+                kind_filter=self.kind_filter.get(), group_order=self.group_order.get())
+            if any(view.get(key, value) != value for key, value in controls.items()):
+                view.update(anchor=None, selected=None, fraction=0, anchor_offset=0)
+            view.update(controls)
+            self.pending_restore = view
+            self.store_current_view(view)
+            return
         if not self.current_folder and self.active_tab != 'favorites':
             return
         index = min(len(self.filtered) - 1, max(0, int(self.canvas.canvasy(0) // self.row_height()) * self.columns())) if self.filtered else None
@@ -544,26 +609,51 @@ class App(Preferences, tk.Tk):
             fraction=self.canvas.yview()[0] if self.filtered else 0, query=self.query.get(), sort=self.sort_order.get(),
             favorites=self.only_favorites.get(), kind_filter=self.kind_filter.get(), group_order=self.group_order.get(),
             selected=str(self.selected_path) if self.selected_path in self.filtered else None)
-        if self.current_folder:
+        view['anchor_offset'] = (max(0, self.canvas.canvasy(0)) - (index // self.columns()) * self.row_height()
+                                  if index is not None else 0)
+        self.store_current_view(view)
+
+    def store_current_view(self, view):
+        if self.active_tab.startswith('folder:'):
+            self.folder_tab_views[self.active_tab] = view
+            return
+        if self.current_folder and self.active_tab == 'all':
+            self.all_folder = self.current_folder
             self.views[self.current_folder] = view.copy()
         self.tab_views.setdefault('__global_favorites__' if self.active_tab == 'favorites' else self.current_folder, {})[self.active_tab] = view
 
     def switch_tab(self, event=None):
-        target = 'favorites' if self.tabs.index(self.tabs.select()) == 1 else 'all'
+        target = self.tabs.select()
         if target == self.active_tab:
             return
         self.remember_position()
+        self.scan_generation += 1  # Ignore scans belonging to a tab left behind.
+        self.pending_restore = None
+        self._loading_tab = None
         self.active_tab = target
         self.only_favorites.set(target == 'favorites')
+        view = self.current_view()
+        self.restore_view_controls(view)
         if target == 'favorites':
             self.load_favorite_metadata()
-        view = self.tab_views.get('__global_favorites__' if target == 'favorites' else self.current_folder, {}).get(target, {})
-        if view:
-            self.query.set(view.get('query', ''))
-            self.sort_order.set(normalize_sort_order(view.get('sort', self.sort_order.get())))
-            self.kind_filter.set(view.get('kind_filter', self.kind_filter.get()))
-            group_order = view.get('group_order', '섞어서')
-            self.group_order.set(group_order if group_order in ARRANGEMENTS else '섞어서')
+        else:
+            root = self.all_folder if target == 'all' else next(
+                (tab['path'] for tab in self.folder_tabs if tab['id'] == target), '')
+            self.current_folder = root
+            self.folder.set(root)
+            if root != self._loaded_folder:
+                self.pending_restore = dict(view, favorites=False)
+                if root and Path(root).is_dir():
+                    self.populate_tree(Path(root))
+                    self.scan()
+                else:
+                    self.files = []
+                    self._loaded_folder = None
+                    self.apply_search()
+                    self.pending_restore = None
+                    self.status.set(tr('폴더를 선택해 주세요.'))
+                self.save()
+                return
         if self.search_job is not None:
             self.after_cancel(self.search_job)
             self.search_job = None
@@ -572,6 +662,90 @@ class App(Preferences, tk.Tk):
         self.remember_position()
         self.save()
 
+    def current_view(self):
+        if self.active_tab.startswith('folder:'):
+            return dict(self.folder_tab_views.get(self.active_tab, {}))
+        if self.active_tab == 'favorites':
+            return dict(self.tab_views.get('__global_favorites__', {}).get('favorites', {}))
+        return dict(self.tab_views.get(self.all_folder, {}).get('all', self.views.get(self.all_folder, {})))
+
+    def restore_view_controls(self, view):
+        self.query.set(view.get('query', ''))
+        self.sort_order.set(normalize_sort_order(view.get('sort', '이름 오름차순')))
+        kind = view.get('kind_filter', '전체')
+        self.kind_filter.set(kind if kind in KIND_FILTERS else '전체')
+        group = view.get('group_order', '섞어서')
+        self.group_order.set(group if group in ARRANGEMENTS else '섞어서')
+        if self.search_job is not None:
+            self.after_cancel(self.search_job)
+            self.search_job = None
+
+    def refresh_folder_tabs(self):
+        self.tabs.set_folder_tabs([dict(tab, label=tab_label(tab['path'])) for tab in self.folder_tabs])
+
+    def add_folder_tab(self, folder):
+        path = Path(folder).expanduser()
+        if not path.is_dir():
+            messagebox.showerror(tr('폴더 확인'), tr(f'폴더를 찾을 수 없습니다.\n{path}'), parent=self)
+            return None
+        try:
+            tab, added = new_folder_tab(str(path.resolve()), self.folder_tabs)
+        except ValueError as exc:
+            messagebox.showerror(tr('폴더 확인'), str(exc), parent=self)
+            return None
+        if added:
+            self.folder_tabs.append(tab)
+            self.folder_tab_views[tab['id']] = {}
+            self.refresh_folder_tabs()
+        self.tabs.select(tab['id'])
+        self.switch_tab()
+        self.save()
+        return tab['id']
+
+    def close_folder_tab(self, identity):
+        if not any(tab['id'] == identity for tab in self.folder_tabs):
+            return
+        if self.active_tab == identity:
+            self.tabs.select('all')
+            self.switch_tab()
+        self.folder_tabs = [tab for tab in self.folder_tabs if tab['id'] != identity]
+        self.folder_tab_views.pop(identity, None)
+        self.refresh_folder_tabs()
+        self.save()
+
+    def reorder_folder_tabs(self, identities):
+        if not isinstance(identities, (list, tuple)):
+            return
+        current = {tab['id']: tab for tab in self.folder_tabs}
+        if len(identities) != len(current) or any(not isinstance(identity, str) for identity in identities):
+            return
+        if set(identities) != set(current):
+            return
+        self.remember_position()
+        self.folder_tabs = [current[identity] for identity in identities]
+        self.refresh_folder_tabs()
+        self.save()
+
+    def show_folder_tab_menu(self):
+        self.smooth_scroll.stop()
+        previous = getattr(self, 'folder_tab_menu', None)
+        if previous is not None and previous.winfo_exists():
+            previous.destroy()
+        menu = self.folder_tab_menu = tk.Menu(self, tearoff=False)
+        if not self.folder_favorites:
+            menu.add_command(label=tr('즐겨찾는 폴더가 없습니다. 왼쪽에서 폴더를 추가해 주세요.'), state='disabled')
+        opened = {tab_path_key(tab['path']) for tab in self.folder_tabs}
+        for name in self.folder_favorites:
+            path = Path(name)
+            label = ('✓ ' if tab_path_key(path) in opened else '') + tab_label(path)
+            menu.add_command(label=label, command=lambda path=path: self.add_folder_tab(path),
+                             state='normal')
+        button = self.tabs.plus_button
+        try:
+            menu.tk_popup(button.winfo_rootx(), button.winfo_rooty() + button.winfo_height())
+        finally:
+            menu.grab_release()
+
     def restore_position(self, view):
         self.smooth_scroll.stop()
         selected = view.get('selected')
@@ -579,8 +753,8 @@ class App(Preferences, tk.Tk):
         anchor = view.get('anchor')
         index = next((i for i, p in enumerate(self.filtered) if str(p) == anchor), None)
         if index is not None:
-            rows = max(1, (len(self.filtered) + self.columns() - 1) // self.columns())
-            fraction = (index // self.columns()) / rows
+            top = (index // self.columns()) * self.row_height() + float(view.get('anchor_offset', 0))
+            fraction = top / max(1, self.scroll_height())
         else:
             fraction = view.get('fraction', 0)
         self.canvas.yview_moveto(fraction)
@@ -594,9 +768,17 @@ class App(Preferences, tk.Tk):
             return
         target = str(target.resolve())
         self.remember_position()
+        if self.active_tab != 'all':
+            self.scan_generation += 1
+            self._loading_tab = None
+            self.active_tab = 'all'
+            self.only_favorites.set(False)
+            self.tabs.select('all')
+            self.current_folder = self.all_folder
         if push and self.current_folder and self.current_folder != target:
             self.history.append(self.current_folder)
         self.current_folder = target
+        self.all_folder = target
         self.folder.set(target)
         if self.active_tab == 'favorites':
             self.pending_restore = dict(self.tab_views.get('__global_favorites__', {}).get('favorites', {}), favorites=True)
@@ -654,17 +836,53 @@ class App(Preferences, tk.Tk):
     def apply_size(self):
         self.size_job = None
         self.remember_position()
-        view = self.views.get(self.current_folder, {})
+        view = self.current_view()
         self.display_size = self.thumb_size.get()
         self.apply_search()
         self.restore_position(view)
 
-    def refresh_favorite_folders(self):
+    def update_favorite_scrollbar(self, first, last):
+        self.favorite_scrollbar.set(first, last)
+        overflow = float(last) - float(first) < 1 - 1e-6
+        if overflow and not self.favorite_scrollbar.winfo_manager():
+            self.favorite_scrollbar.grid()
+        elif not overflow and self.favorite_scrollbar.winfo_manager():
+            self.favorite_scrollbar.grid_remove()
+
+    def refresh_favorite_folders(self, selected_folder=None):
+        self.favorite_list.cancel_drag()
+        fraction = self.favorite_list.yview()[0]
+        if selected_folder is None:
+            selection = self.favorite_list.selection()
+            if selection:
+                values = self.favorite_list.item(selection[0], 'values')
+                selected_folder = values[0] if values else None
         for node in self.favorite_list.get_children():
             self.favorite_list.delete(node)
         for index, folder in enumerate(self.folder_favorites):
             path = Path(folder)
-            self.favorite_list.insert('', 'end', iid=str(index), text=path.name or str(path), image=self.tree_icons['folder'])
+            node = self.favorite_list.insert('', 'end', iid=str(index), text=path.name or str(path),
+                                             values=(folder,), image=self.tree_icons['folder'])
+            if folder == selected_folder:
+                self.favorite_list.selection_set(node)
+                self.favorite_list.focus(node)
+        self.favorite_list.yview_moveto(fraction)
+
+    def reorder_favorite_folders(self, identities):
+        if not isinstance(identities, (list, tuple)):
+            return
+        expected = {str(index) for index in range(len(self.folder_favorites))}
+        if (len(identities) != len(expected) or any(not isinstance(identity, str) for identity in identities)
+                or set(identities) != expected):
+            return
+        reordered = [self.folder_favorites[int(identity)] for identity in identities]
+        if reordered == self.folder_favorites:
+            return
+        selection = self.favorite_list.selection()
+        selected_folder = self.folder_favorites[int(selection[0])] if selection and selection[0] in expected else None
+        self.folder_favorites = reordered
+        self.refresh_favorite_folders(selected_folder=selected_folder)
+        self.save()
 
     def favorite_folder(self):
         if self.current_folder and self.current_folder not in self.folder_favorites:
@@ -674,10 +892,21 @@ class App(Preferences, tk.Tk):
 
     def remove_favorite_folder(self):
         selection = self.favorite_list.selection()
-        if selection:
-            self.folder_favorites.pop(int(selection[0]))
-            self.refresh_favorite_folders()
-            self.save()
+        if not selection:
+            return
+        index = int(selection[0])
+        folder = self.folder_favorites[index]
+        self.smooth_scroll.stop()
+        prompt = tr('다음 즐겨찾는 폴더를 삭제하시겠습니까?\n\n{name}\n\n(탭도 같이 삭제됩니다)\n실제 폴더와 파일은 삭제되지 않습니다.')
+        if not messagebox.askyesno(tr('즐겨찾는 폴더 제거'), prompt.format(name=tab_label(folder)),
+                                  parent=self, icon='warning', default='no'):
+            return
+        key = tab_path_key(folder)
+        self.folder_favorites.pop(index)
+        for identity in [tab['id'] for tab in self.folder_tabs if tab_path_key(tab['path']) == key]:
+            self.close_folder_tab(identity)
+        self.refresh_favorite_folders()
+        self.save()
 
     def show_favorite_folder_path(self, event):
         node = self.favorite_list.identify_row(event.y)
@@ -796,7 +1025,7 @@ class App(Preferences, tk.Tk):
             self.favorites.remove(key)
         else:
             self.favorites.add(key)
-        if self.active_tab == 'all':
+        if self.active_tab != 'favorites':
             for card_path, frame, _, _ in self.cards.values():
                 if card_path == path:
                     self.update_badge(frame, path)
@@ -844,6 +1073,8 @@ class App(Preferences, tk.Tk):
                 if view.get(key) == str(old):
                     view[key] = str(new) if new is not None else None
         for view in self.views.values():
+            update(view)
+        for view in self.folder_tab_views.values():
             update(view)
         for tabs in self.tab_views.values():
             for view in tabs.values():
@@ -1201,7 +1432,7 @@ class App(Preferences, tk.Tk):
         return 'break'
 
     def update_badge(self, frame, path):
-        show = self.active_tab == 'all' and str(path) in self.favorites
+        show = self.active_tab != 'favorites' and str(path) in self.favorites
         frame.set_favorite(show)
 
     def update_card_labels(self, frame, path):
@@ -1232,7 +1463,12 @@ class App(Preferences, tk.Tk):
             messagebox.showerror(tr('파일 정보'), tr(str(exc)))
 
     def save(self):
-        self.settings.update(folder=self.current_folder, recursive=self.recursive.get(), sort=self.sort_order.get(),
+        if self.active_tab == 'all':
+            self.all_folder = self.current_folder
+        self.settings.update(folder=self.all_folder, recursive=self.recursive.get(), sort=self.sort_order.get(),
+                             sidebar_split_ratio=self.sidebar_split.get_ratio(),
+                             folder_tabs=self.folder_tabs, folder_tab_views=self.folder_tab_views,
+                             active_library_tab=self.active_tab,
                              thumb_size=self.thumb_size.get(), only_favorites=self.only_favorites.get(),
                              views=self.views, tab_views=self.tab_views, file_favorites=sorted(self.favorites),
                              folder_favorites=self.folder_favorites, kind_filter=self.kind_filter.get(),
@@ -1255,7 +1491,14 @@ class App(Preferences, tk.Tk):
             self.save()
 
 
-    def scan(self):
+    def scan(self, source_for_favorites=False):
+        if self.active_tab == 'favorites' and not source_for_favorites:
+            self.remember_position()
+            view = self.current_view()
+            self.load_favorite_metadata()
+            self.apply_search()
+            self.restore_position(view)
+            return
         root = Path(self.folder.get()).expanduser()
         if not self.folder.get() or not root.is_dir():
             messagebox.showerror(tr('폴더 확인'), tr('존재하는 폴더를 선택해 주세요.'))
@@ -1267,13 +1510,15 @@ class App(Preferences, tk.Tk):
         self.smooth_scroll.stop()
         if self.pending_restore is None:
             self.remember_position()
-            self.pending_restore = self.views.get(self.current_folder)
+            self.pending_restore = self.current_view()
+        self._loading_tab = self.active_tab
         self.save()
         self.generation += 1
         self.scan_generation += 1
         gen = self.scan_generation
         revision = self.file_revision
         self.files = []
+        self._loaded_folder = None
         self.filtered = []
         self.pending.clear()
         for _, frame, _, window in self.cards.values():
@@ -1317,6 +1562,8 @@ class App(Preferences, tk.Tk):
         self.remember_position()
 
     def apply_search(self):
+        if self._loading_tab == self.active_tab and self.pending_restore is not None:
+            self.remember_position()
         if self.search_job is not None:
             self.after_cancel(self.search_job)
         self.search_job = None
@@ -1346,6 +1593,8 @@ class App(Preferences, tk.Tk):
                 self.item_kinds.update(result[6])
             result = self.changed_snapshot(*result[:6])
         self.files, modified, metadata = result
+        self._loaded_folder = self.current_folder
+        self._loading_tab = None
         self.modified.update(modified)
         self.metadata.update(metadata)
         logging.info('Scan complete: %s library items', len(self.files))
@@ -1360,11 +1609,12 @@ class App(Preferences, tk.Tk):
             self.kind_filter.set(restore.get('kind_filter', self.kind_filter.get()))
             group_order = restore.get('group_order', '섞어서')
             self.group_order.set(group_order if group_order in ARRANGEMENTS else '섞어서')
-            self.only_favorites.set(restore.get('favorites', False))
-        self.active_tab = 'favorites' if self.only_favorites.get() else 'all'
+            self.only_favorites.set(False if self.active_tab.startswith('folder:') else restore.get('favorites', False))
+        if not self.active_tab.startswith('folder:'):
+            self.active_tab = 'favorites' if self.only_favorites.get() else 'all'
         if self.active_tab == 'favorites':
             restore = self.tab_views.get('__global_favorites__', {}).get('favorites', restore)
-        self.tabs.select(1 if self.active_tab == 'favorites' else 0)
+        self.tabs.select(self.active_tab)
         self.apply_search()
         if restore:
             self.restore_position(restore)

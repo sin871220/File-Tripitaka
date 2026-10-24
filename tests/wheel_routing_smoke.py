@@ -222,6 +222,8 @@ class WheelRoutingSmoke(unittest.TestCase):
                 for index in range(180):
                     tree.insert('', 'end', text=f'Example folder {index:03d}')
                 app.update()
+                if tree is app.favorite_list:
+                    self.assertTrue(app.favorite_scrollbar.winfo_ismapped())
                 tree.yview_moveto(0.25)
                 before = tree.yview()[0]
                 gallery = app.canvas.canvasy(0)
@@ -230,19 +232,41 @@ class WheelRoutingSmoke(unittest.TestCase):
                     motion.assert_not_called()
                 self.assertGreater(tree.yview()[0], before)
                 self.assertAlmostEqual(app.canvas.canvasy(0), gallery, delta=1)
+        gallery = app.canvas.canvasy(0)
+        app.toggle_sidebar_section('favorites')
+        app.update()
+        self.assertFalse(app.favorite_scrollbar.winfo_ismapped())
+        app.toggle_sidebar_section('favorites')
+        app.update()
+        self.assertTrue(app.favorite_scrollbar.winfo_ismapped())
+        app.favorite_list.yview_moveto(.25)
+        before = app.favorite_list.yview()[0]
+        self.wheel(app.favorite_list)
+        self.assertGreater(app.favorite_list.yview()[0], before)
+        self.assertAlmostEqual(app.canvas.canvasy(0), gallery, delta=1)
+        app.favorite_list.delete(*app.favorite_list.get_children())
+        for index in range(3):
+            app.favorite_list.insert('', 'end', text=f'Few example folders {index}')
+        app.update()
+        self.assertFalse(app.favorite_scrollbar.winfo_ismapped(),
+                         'A short favorite folder list must not reserve a scrollbar')
+        self.assertAlmostEqual(app.canvas.canvasy(0), gallery, delta=1)
 
     def test_native_scrollbars_operate_their_own_views(self):
         app = self.app
-        for index in range(180):
-            app.tree.insert('', 'end', text=f'Example folder {index:03d}')
-        tree_scroll = next(widget for widget in descendants(app.sidebar)
-                           if isinstance(widget, module.ttk.Scrollbar))
+        for tree in (app.tree, app.favorite_list):
+            for index in range(180):
+                tree.insert('', 'end', text=f'Example folder {index:03d}')
         app.update()
-        for scrollbar, view in ((app.scroll, app.canvas), (tree_scroll, app.tree)):
+        self.assertTrue(app.favorite_scrollbar.winfo_ismapped())
+        views = (app.canvas, app.tree, app.favorite_list)
+        for scrollbar, view in ((app.scroll, app.canvas), (app.tree_scrollbar, app.tree),
+                                (app.favorite_scrollbar, app.favorite_list)):
             with self.subTest(scrollbar=str(scrollbar)):
                 view.yview_moveto(0.3)
                 before = view.yview()[0]
                 gallery = app.canvas.canvasy(0)
+                other_views = {other: other.yview() for other in views if other is not view}
                 with patch.object(app.smooth_scroll, 'scroll_by', wraps=app.smooth_scroll.scroll_by) as motion:
                     scrollbar.event_generate('<Enter>')
                     self.wheel(scrollbar)
@@ -254,7 +278,9 @@ class WheelRoutingSmoke(unittest.TestCase):
                     app.tk.call(*command, 'scroll', 1, 'units')
                     app.update()
                 self.assertGreater(view.yview()[0], before)
-                if view is app.tree:
+                for other, position in other_views.items():
+                    self.assertEqual(other.yview(), position)
+                if view is not app.canvas:
                     self.assertAlmostEqual(app.canvas.canvasy(0), gallery, delta=1)
 
     def test_scrollbar_decimal_units_and_fractional_pages(self):

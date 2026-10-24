@@ -7,6 +7,12 @@ from tkinter import ttk
 LANGUAGES = {'ko': '한국어', 'en': 'English'}
 _language = 'ko'
 EN = {
+    '즐겨찾는 폴더 제거': 'Remove favorite folder',
+    '다음 즐겨찾는 폴더를 삭제하시겠습니까?\n\n{name}\n\n(탭도 같이 삭제됩니다)\n실제 폴더와 파일은 삭제되지 않습니다.': 'Remove this favorite folder?\n\n{name}\n\n(The matching folder tab will also be removed.)\nThe actual folder and files will not be deleted.',
+    '즐겨찾는 폴더에서 탭 추가': 'Add a tab from favorite folders',
+    '탭 닫기': 'Close tab',
+    '즐겨찾는 폴더가 없습니다. 왼쪽에서 폴더를 추가해 주세요.': 'No favorite folders. Add a folder from the left panel.',
+    '이미 열린 폴더 탭으로 이동했습니다.': 'Switched to the existing folder tab.',
     '썸네일 위 표시': 'Thumbnail badges',
     '즐겨찾기 별': 'Favorite star', '폴더 아이콘': 'Folder icon', '페이지 수': 'Page count',
     '왼쪽 위': 'Top left', '오른쪽 위': 'Top right', '왼쪽 아래': 'Bottom left', '오른쪽 아래': 'Bottom right',
@@ -138,6 +144,7 @@ EN = {
 }
 # Templates translate generated UI prose without changing filenames or paths.
 TEMPLATES = [
+('폴더 탭을 추가했습니다. {name}', 'Added folder tab: {name}'),
 ('오류 정보: {detail}\n로그: {path}', 'Error details: {detail}\nLog: {path}'),
 ('지원하지 않는 단축키입니다: {key}', 'Unsupported shortcut: {key}'),
 ('{key}는 탐색에 사용하는 키입니다. 다른 키를 선택해 주세요.', '{key} is reserved for navigation. Choose another key.'),
