@@ -11,6 +11,7 @@ import subprocess
 import zipfile
 import warnings
 from PIL import Image, ImageOps, UnidentifiedImageError
+from PIL.PngImagePlugin import PngInfo
 
 ARCHIVES = {'.zip', '.cbz', '.rar', '.cbr', '.7z', '.cb7'}
 IMAGES = {'.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif', '.tif', '.tiff'}
@@ -166,6 +167,43 @@ def preview_indices(length, count, sampling='순차 보기'):
     return list(range(count))
 
 
+def _save_cover_cache(image, target, page_count):
+    """Atomically save thumbnail pixels and their total supported-image count."""
+    image.info['page_count'] = page_count
+    metadata = PngInfo()
+    metadata.add_text('page_count', str(page_count))
+    target.parent.mkdir(parents=True, exist_ok=True)
+    import tempfile
+    with tempfile.NamedTemporaryFile(dir=target.parent, suffix='.png', delete=False) as stream:
+        temporary = Path(stream.name)
+    try:
+        image.save(temporary, format='PNG', pnginfo=metadata)
+        temporary.replace(target)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _cached_cover(target, path, entries=None):
+    with Image.open(target) as cached:
+        image = cached.copy()
+    stored = image.info.get('page_count')
+    # PNG text is untrusted. A malformed or legacy count is repaired from the
+    # same entry listing used for rendering, without decoding another image.
+    valid = (isinstance(stored, str) and 1 <= len(stored) <= 10
+             and stored.isascii() and stored.isdecimal()
+             and 0 < int(stored) <= 2_147_483_647)
+    page_count = len(entries) if entries is not None else int(stored) if valid else len(image_entries(path))
+    image.info['page_count'] = page_count
+    if not valid or int(stored) != page_count:
+        try:
+            _save_cover_cache(image, target, page_count)
+        except OSError:
+            # An existing readable thumbnail remains usable when the optional
+            # metadata upgrade cannot be written (for example, a read-only cache).
+            pass
+    return image
+
+
 def cover(path, cache, preview_count=1, sampling='순차 보기'):
     preview_count = max(1, min(3, int(preview_count)))
     path = Path(path).resolve()
@@ -175,8 +213,7 @@ def cover(path, cache, preview_count=1, sampling='순차 보기'):
                                    separators=(',', ':')).encode('utf-8')).hexdigest()
     target = Path(cache) / (key + '.png')
     if target.exists():
-        with Image.open(target) as im:
-            return im.copy()
+        return _cached_cover(target, path, entries)
     entries = entries if entries is not None else image_entries(path)
     images = []
     for index in preview_indices(len(entries), preview_count, sampling):
@@ -191,15 +228,7 @@ def cover(path, cache, preview_count=1, sampling='순차 보기'):
             # Preserve a usable front cover if a secondary sampled page fails.
             continue
     im = side_by_side_thumbnail(images) if len(images) > 1 else images[0]
-    target.parent.mkdir(parents=True, exist_ok=True)
-    import tempfile
-    with tempfile.NamedTemporaryFile(dir=target.parent, suffix='.png', delete=False) as stream:
-        temp = Path(stream.name)
-    try:
-        im.save(temp, format='PNG')
-        temp.replace(target)
-    finally:
-        temp.unlink(missing_ok=True)
+    _save_cover_cache(im, target, len(entries))
     return im
 
 
@@ -273,8 +302,7 @@ def render_edited_cover(path, cache, recipes, preview_count=1, sampling='순차 
                                     separators=(',', ':')).encode('utf-8')).hexdigest()
     target = Path(cache) / (key + '.png')
     if target.exists():
-        with Image.open(target) as cached:
-            return cached.copy()
+        return _cached_cover(target, path, entries)
     images = []
     for entry, box in selected:
         try:
@@ -283,15 +311,7 @@ def render_edited_cover(path, cache, recipes, preview_count=1, sampling='순차 
             if not images:
                 raise
     image = side_by_side_thumbnail(images) if len(images) > 1 else images[0]
-    target.parent.mkdir(parents=True, exist_ok=True)
-    import tempfile
-    with tempfile.NamedTemporaryFile(dir=target.parent, suffix='.png', delete=False) as stream:
-        temporary = Path(stream.name)
-    try:
-        image.save(temporary, format='PNG')
-        temporary.replace(target)
-    finally:
-        temporary.unlink(missing_ok=True)
+    _save_cover_cache(image, target, len(entries))
     return image
 
 

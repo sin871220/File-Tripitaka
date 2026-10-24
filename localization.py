@@ -7,6 +7,16 @@ from tkinter import ttk
 LANGUAGES = {'ko': '한국어', 'en': 'English'}
 _language = 'ko'
 EN = {
+    '썸네일 위 표시': 'Thumbnail badges',
+    '즐겨찾기 별': 'Favorite star', '폴더 아이콘': 'Folder icon', '페이지 수': 'Page count',
+    '왼쪽 위': 'Top left', '오른쪽 위': 'Top right', '왼쪽 아래': 'Bottom left', '오른쪽 아래': 'Bottom right',
+    '표시 기본값 복원': 'Reset badge defaults',
+    '위로': 'Move up', '아래로': 'Move down',
+    '크게': 'Large', '보통': 'Medium', '작게': 'Small',
+    '크기: 크게 100% · 보통 2/3 · 작게 1/2': 'Size: Large 100% · Medium 2/3 · Small 1/2',
+    '표시': 'Show',
+    '손잡이나 항목 이름을 드래그하거나 위로·아래로 버튼으로 순서를 바꾸세요. 같은 위치에서는 목록의 위에서 아래 순서로 표시합니다.': 'Drag a handle or item name, or use Move up/down. Badges in the same corner follow the list from top to bottom.',
+    '별은 즐겨찾기 탭에서 숨깁니다. 페이지 수는 전체 이미지 수이며, 폴더는 바로 안의 이미지만 셉니다.': 'Stars are hidden in the Favorites tab. Pages count all images; folders count only images directly inside.',
     '배치': 'Grouping', '섞어서': 'Mixed', '폴더 먼저': 'Folders first', '파일 먼저': 'Files first',
     '이름 ▲': 'Name ▲', '이름 ▼': 'Name ▼', '수정 날짜 ▲': 'Modified ▲', '수정 날짜 ▼': 'Modified ▼',
     '종류': 'Type', '폴더': 'Folder',

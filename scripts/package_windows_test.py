@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 REQUIRED = ('app.py', 'brand.py', 'archive_core.py', 'library_items.py', 'preferences.py', 'localization.py',
             'viewer.py', 'windows_shell.py', 'file_operations.py', 'shortcuts.py',
             'runtime_check.py', 'thumbnail_worker.py', 'large_thumbnail.py',
-            'thumbnail_editor.py', 'thumbnail_edits.py', 'smooth_scroll.py', 'gallery_card.py',
+            'thumbnail_editor.py', 'thumbnail_edits.py', 'thumbnail_overlays.py', 'smooth_scroll.py', 'gallery_card.py',
             'desktop_shortcuts.py', 'tree_icons.py', 'ui_fonts.py', 'dialog_geometry.py',
             'run-windows.bat', 'requirements.txt', 'assets/app.ico', 'assets/app.png',
             'fonts/NotoSansCJKkr-Regular.otf', 'fonts/OFL.txt', 'fonts/SOURCE.txt')
@@ -58,6 +58,15 @@ def package(root=ROOT, output=None):
 2. 새 폴더에 압축을 전부 푸세요. 예전 버전 폴더에 덮어 풀지 마세요.
 3. 압축을 푼 폴더 안의 run-windows.bat을 실행하세요.
 4. 제목 표시줄의 v{version}을 확인하세요.
+
+썸네일 위 표시 설정
+- 설정 → 표시 설정 → 썸네일 위 표시에서 즐겨찾기 별 / 폴더 아이콘 / 페이지 수를 각각 표시하거나 숨기고 네 모서리 중 위치를 고르세요.
+- 별과 폴더 아이콘은 크기도 각각 고릅니다. 크게는 현재 크기, 보통은 2/3, 작게는 1/2이며 기본값은 크게입니다. 미리보기와 실제 카드에 반영하고 다시 실행해도 유지합니다.
+- 손잡이나 항목 이름을 위아래로 드래그해 순서를 바꾸세요. 행을 클릭해 선택하고 위로 / 아래로 버튼을 사용해도 됩니다. 체크박스와 위치 드롭다운은 순서를 바꾸지 않습니다.
+- 같은 위치에서는 목록의 위에서 아래 순서로 쌓입니다. 아래쪽도 묶음 전체를 아래에 맞춰 이 순서를 유지하며, 숨긴 표시는 빈칸을 남기지 않습니다.
+- 기본값은 별 오른쪽 위, 폴더 왼쪽 위, 페이지 오른쪽 아래로 모두 표시합니다. 즐겨찾기 탭에서는 별이 숨겨집니다.
+- 페이지 수는 지원 이미지 전체 개수이며 폴더는 바로 안의 이미지 개수입니다. 2장·3장 보기에서도 그룹당 하나만 표시하고, 확인할 수 없는 개수는 표시하지 않습니다.
+- 설정 미리보기와 표시 기본값 복원을 사용할 수 있습니다. 기본값 복원은 순서를 별 → 폴더 → 페이지로, 두 아이콘 크기를 크게로 돌립니다. 적용하면 카드와 스크롤 위치를 유지하며 바로 바뀌고 다시 실행해도 순서·표시 여부·위치·크기를 기억합니다.
 
 정렬 표시와 그룹 배치
 - 정렬 목록은 이름 ▲ / 이름 ▼ / 수정 날짜 ▲ / 수정 날짜 ▼로 표시합니다. ▲는 오름차순(날짜는 오래된 순), ▼는 내림차순(날짜는 최신 순)입니다.

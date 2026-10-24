@@ -298,6 +298,7 @@ def main():
         run([sys.executable, ROOT / 'tests' / 'scroll_smoke.py'], timeout=300)
         run([sys.executable, ROOT / 'tests' / 'wheel_routing_smoke.py'], timeout=300)
         run([sys.executable, ROOT / 'tests' / 'folder_gallery_smoke.py'], timeout=300)
+        run([sys.executable, ROOT / 'tests' / 'overlay_settings_smoke.py'], timeout=300)
         run([sys.executable, ROOT / 'tests' / 'gallery_card_smoke.py'], timeout=300)
     artifact, binary = freeze(target, arch, version, executable, work)
     frozen_check(binary, target)

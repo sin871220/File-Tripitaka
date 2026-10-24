@@ -9,6 +9,9 @@ from tkinter import ttk, filedialog, messagebox, font
 from ui_fonts import configure_fonts, select_family
 from brand import APP_NAME, APP_VERSION
 from dialog_geometry import center_dialog
+from gallery_card import GalleryCard
+from thumbnail_overlays import (normalize_overlay_settings, normalize_overlay_order, OVERLAY_POSITIONS,
+                                POSITION_LABELS, OVERLAY_SIZES, SIZE_LABELS)
 from viewer import (ACTIONS, KEY_ACTIONS, CUSTOM_VIEWER_ACTION, DEFAULT_APP_ACTION,
                     HONEYVIEW_ACTION, available_actions, default_action,
                     normalize_action, is_viewer, launch_viewer, choose_viewer)
@@ -115,6 +118,14 @@ class Preferences:
         style.configure('TScrollbar', background=p['border'], troughcolor=p['bg'], arrowcolor=p['muted'])
         style.configure('TScale', background=p['panel'], troughcolor=p['border'])
         style.configure('Muted.TLabel', foreground=p['muted'])
+        style.configure('OverlayRow.TFrame', background=p['panel'], borderwidth=1,
+                        relief='solid', bordercolor=p['panel'], lightcolor=p['panel'], darkcolor=p['panel'])
+        style.map('OverlayRow.TFrame', background=[('alternate', p['hover'])],
+                  bordercolor=[('alternate', p['accent'])], lightcolor=[('alternate', p['accent'])],
+                  darkcolor=[('alternate', p['accent'])])
+        style.configure('OverlayRow.TLabel', background=p['panel'], foreground=p['fg'])
+        style.map('OverlayRow.TLabel', background=[('alternate', p['hover'])],
+                  foreground=[('alternate', p['fg'])])
         self.option_add('*TCombobox*Listbox.background', p['field'])
         self.option_add('*TCombobox*Listbox.foreground', p['fg'])
         self.option_add('*TCombobox*Listbox.selectBackground', p['accent'])
@@ -168,7 +179,7 @@ class Preferences:
         else:
             self.open_archive(path)
 
-    def commit_preferences(self, theme, action, honey, custom, recursive, display=None, typography=None, key_actions=None, language=None, shortcuts=None):
+    def commit_preferences(self, theme, action, honey, custom, recursive, display=None, typography=None, key_actions=None, language=None, shortcuts=None, overlays=None, overlay_order=None):
         if language is not None and language not in LANGUAGES:
             raise ValueError('지원하지 않는 언어입니다.')
         previous_language = self.settings.get('language', 'ko')
@@ -201,6 +212,8 @@ class Preferences:
                 display_values = {key: bool(display[key]) for key in ('show_filename', 'show_extension', 'show_size', 'show_date')}
             except (KeyError, TypeError):
                 raise ValueError('표시 설정을 확인해 주세요.')
+        overlay_values = normalize_overlay_settings(overlays) if overlays is not None else None
+        ordered_overlays = normalize_overlay_order(overlay_order) if overlay_order is not None else None
         font_view = None
         previous_size = getattr(self, 'font_size', 10)
         if typography is not None:
@@ -224,6 +237,10 @@ class Preferences:
                              viewer=honey, custom_viewer=custom, **keys)
         if display_values is not None:
             self.settings.update(display_values)
+        if overlay_values is not None:
+            self.settings['thumbnail_overlays'] = overlay_values
+        if ordered_overlays is not None:
+            self.settings['thumbnail_overlay_order'] = ordered_overlays
         if language is not None:
             self.settings['language'] = language
         self.recursive.set(recursive)
@@ -308,16 +325,224 @@ class Preferences:
                 dialog.geometry(f'{width}x{height}')
         display = {key: tk.BooleanVar(dialog, value=self.settings.get(key, True))
                    for key in ('show_filename', 'show_extension', 'show_size', 'show_date')}
-        ttk.Label(display_page, text=tr('썸네일 카드 표시'), style='Heading.TLabel').pack(anchor='w', pady=(0, 16))
-        extension = ttk.Checkbutton(display_page, text=tr('파일명에 확장자 표시'), variable=display['show_extension'])
+        ttk.Label(display_page, text=tr('썸네일 카드 표시'), style='Heading.TLabel').pack(anchor='w', pady=(0, 12))
+        details = ttk.Frame(display_page)
+        details.pack(fill='x')
+        extension = ttk.Checkbutton(details, text=tr('파일명에 확장자 표시'), variable=display['show_extension'])
         def filename_changed():
             extension.configure(state='normal' if display['show_filename'].get() else 'disabled')
-        ttk.Checkbutton(display_page, text=tr('파일명'), variable=display['show_filename'], command=filename_changed).pack(anchor='w', pady=6)
-        extension.pack(anchor='w', padx=24, pady=(0, 10))
-        ttk.Checkbutton(display_page, text=tr('용량'), variable=display['show_size']).pack(anchor='w', pady=6)
-        ttk.Checkbutton(display_page, text=tr('날짜 (수정한 날짜)'), variable=display['show_date']).pack(anchor='w', pady=6)
-        ttk.Label(display_page, text=tr('체크한 항목만 카드에 표시합니다. 전체 경로와 파일 정보는 그대로 확인할 수 있습니다.'), wraplength=510, style='Muted.TLabel').pack(anchor='w', pady=(18, 0))
+        ttk.Checkbutton(details, text=tr('파일명'), variable=display['show_filename'], command=filename_changed).grid(row=0, column=0, sticky='w', pady=5, padx=(0, 24))
+        extension.grid(row=0, column=1, sticky='w', pady=5)
+        ttk.Checkbutton(details, text=tr('용량'), variable=display['show_size']).grid(row=1, column=0, sticky='w', pady=5, padx=(0, 24))
+        ttk.Checkbutton(details, text=tr('날짜 (수정한 날짜)'), variable=display['show_date']).grid(row=1, column=1, sticky='w', pady=5)
+        ttk.Label(display_page, text=tr('체크한 항목만 카드에 표시합니다. 전체 경로와 파일 정보는 그대로 확인할 수 있습니다.'), wraplength=630, style='Muted.TLabel').pack(anchor='w', pady=(8, 12))
         filename_changed()
+        ttk.Separator(display_page).pack(fill='x', pady=(0, 12))
+        ttk.Label(display_page, text=tr('썸네일 위 표시'), style='Heading.TLabel').pack(anchor='w', pady=(0, 10))
+        overlay_values = normalize_overlay_settings(self.settings.get('thumbnail_overlays'))
+        overlay_order = normalize_overlay_order(self.settings.get('thumbnail_overlay_order'))
+        overlay_selected = tk.StringVar(dialog, value=overlay_order[0])
+        overlay_visible = {key: tk.BooleanVar(dialog, value=value['visible'])
+                           for key, value in overlay_values.items()}
+        overlay_position = {key: tk.StringVar(dialog, value=value['position'])
+                            for key, value in overlay_values.items()}
+        overlay_size = {key: tk.StringVar(dialog, value=overlay_values[key].get('size', 'large'))
+                        for key in ('favorite', 'folder')}
+        dialog.settings_overlay_visible = overlay_visible
+        dialog.settings_overlay_position = overlay_position
+        dialog.settings_overlay_combos = {}
+        dialog.settings_overlay_controls = dialog.settings_overlay_combos
+        dialog.settings_overlay_size = overlay_size
+        dialog.settings_overlay_size_controls = {}
+        dialog.settings_overlay_order = overlay_order
+        dialog.settings_overlay_selected = overlay_selected
+        dialog.settings_overlay_rows = {}
+        dialog.settings_overlay_labels = {}
+        dialog.settings_overlay_checks = {}
+        dialog.settings_overlay_handles = {}
+        overlay_section = ttk.Frame(display_page)
+        overlay_section.pack(fill='x')
+        overlay_controls = ttk.Frame(overlay_section)
+        overlay_controls.pack(side='left', fill='both', expand=True, padx=(0, 16))
+        overlay_preview = ttk.Frame(overlay_section)
+        overlay_preview.pack(side='right', anchor='n')
+        ttk.Label(overlay_preview, text=tr('미리보기'), style='Muted.TLabel').pack(anchor='w', pady=(0, 5))
+        preview_canvas = tk.Canvas(overlay_preview, width=166, height=216,
+                                   highlightthickness=0, bd=0, bg=self.palette['field'])
+        preview_canvas.pack()
+        preview_card = GalleryCard(preview_canvas, Path('preview'), 0, 0, 166, 216,
+                                   self.palette, (self.ui_font, min(self.font_size, 11)))
+        preview_card.set_favorite(True)
+        preview_card.set_folder(True)
+        preview_card.set_page_count(30)
+        # A neutral sample makes all four corners visible without using a file.
+        from PIL import Image, ImageDraw
+        sample = Image.new('RGB', (150, 200), '#DAE5ED')
+        drawing = ImageDraw.Draw(sample)
+        drawing.polygon(((0, 200), (0, 150), (52, 95), (100, 160), (150, 110), (150, 200)), fill='#8AA9B3')
+        preview_card.thumbnail.show_image(sample, (150, 200))
+        dialog.settings_overlay_preview = preview_card
+        overlay_traces = []
+        overlay_drag = {}
+        def dispose_preview(event):
+            if event.widget is dialog:
+                for variable, trace_id in overlay_traces:
+                    try:
+                        variable.trace_remove('write', trace_id)
+                    except tk.TclError:
+                        pass
+                overlay_traces.clear()
+                overlay_drag.clear()
+                preview_card.destroy()
+        dialog.bind('<Destroy>', dispose_preview, add='+')
+        def draft_overlays():
+            values = {key: dict(visible=overlay_visible[key].get(), position=overlay_position[key].get())
+                      for key in overlay_values}
+            for key, choice in overlay_size.items():
+                values[key]['size'] = choice.get()
+            return values
+        def update_overlay_preview(*_):
+            if not preview_card.alive:
+                return
+            preview_palette = PALETTES.get(theme.get(), self.palette)
+            preview_card.set_overlays(draft_overlays())
+            preview_card.set_overlay_order(overlay_order)
+            preview_card.set_theme(preview_palette, (self.ui_font, min(self.font_size, 11)))
+            preview_canvas.configure(bg=preview_palette['field'])
+            for key, choice in dialog.settings_overlay_combos.items():
+                choice.configure(state='readonly' if overlay_visible[key].get() else 'disabled')
+            for key, choice in dialog.settings_overlay_size_controls.items():
+                choice.configure(state='readonly' if overlay_visible[key].get() else 'disabled')
+        def start_overlay_drag(event, key):
+            overlay_selected.set(key)
+            overlay_drag.update(key=key, start_y=event.y_root, active=False)
+        def drag_overlay(event):
+            key = overlay_drag.get('key')
+            if key is None:
+                return
+            if not overlay_drag['active']:
+                if abs(event.y_root - overlay_drag['start_y']) < 6:
+                    return
+                overlay_drag['active'] = True
+            # Flush geometry only: processing Tk events here would re-enter a
+            # drag handler while the same row order is being changed.
+            overlay_controls.update_idletasks()
+            target = min(range(len(overlay_order)), key=lambda index: abs(
+                event.y_root - (dialog.settings_overlay_rows[overlay_order[index]].winfo_rooty()
+                                + dialog.settings_overlay_rows[overlay_order[index]].winfo_height() / 2)))
+            move_overlay_to(key, target)
+        def finish_overlay_drag(event):
+            overlay_drag.clear()
+        def bind_overlay_drag(widget, key):
+            widget.bind('<ButtonPress-1>', lambda event, key=key: start_overlay_drag(event, key))
+            widget.bind('<B1-Motion>', drag_overlay)
+            widget.bind('<ButtonRelease-1>', finish_overlay_drag)
+        for key, label in (('favorite', '즐겨찾기 별'), ('folder', '폴더 아이콘'), ('pages', '페이지 수')):
+            row = ttk.Frame(overlay_controls, style='OverlayRow.TFrame', padding=(3, 1), takefocus=True)
+            row.grid(row=overlay_order.index(key), column=0, sticky='ew')
+            dialog.settings_overlay_rows[key] = row
+            bind_overlay_drag(row, key)
+            row.bind('<FocusIn>', lambda event, key=key: overlay_selected.set(key))
+            handle = ttk.Label(row, text='≡', style='OverlayRow.TLabel', padding=(5, 7),
+                               cursor='sb_v_double_arrow')
+            handle.grid(row=0, column=0, sticky='ns')
+            bind_overlay_drag(handle, key)
+            dialog.settings_overlay_handles[key] = handle
+            check = ttk.Checkbutton(row, text=tr('표시'), variable=overlay_visible[key],
+                                    command=lambda key=key: overlay_selected.set(key))
+            check.grid(row=0, column=2, sticky='w', padx=(5, 10), pady=5)
+            dialog.settings_overlay_checks[key] = check
+            name = ttk.Label(row, text=tr(label), style='OverlayRow.TLabel', padding=(8, 7),
+                             cursor='sb_v_double_arrow')
+            name.grid(row=0, column=1, sticky='nsew')
+            bind_overlay_drag(name, key)
+            dialog.settings_overlay_labels[key] = name
+            choice = ttk.Combobox(row, state='readonly', width=12,
+                                  textvariable=overlay_position[key], values=OVERLAY_POSITIONS)
+            choice._display_labels = POSITION_LABELS
+            choice.grid(row=0, column=3, sticky='ew', pady=5)
+            choice.bind('<FocusIn>', lambda event, key=key: overlay_selected.set(key), add='+')
+            choice.bind('<Button-1>', lambda event, key=key: overlay_selected.set(key), add='+')
+            row.columnconfigure(1, weight=1)
+            dialog.settings_overlay_combos[key] = choice
+            if key in overlay_size:
+                size_combo = ttk.Combobox(row, state='readonly', width=7,
+                                          textvariable=overlay_size[key], values=OVERLAY_SIZES)
+                size_combo._display_labels = SIZE_LABELS
+                size_combo.grid(row=0, column=4, sticky='ew', padx=(6, 0), pady=5)
+                size_combo.bind('<FocusIn>', lambda event, key=key: overlay_selected.set(key), add='+')
+                size_combo.bind('<Button-1>', lambda event, key=key: overlay_selected.set(key), add='+')
+                dialog.settings_overlay_size_controls[key] = size_combo
+                overlay_traces.append((overlay_size[key], overlay_size[key].trace_add('write', update_overlay_preview)))
+            else:
+                ttk.Frame(row).grid(row=0, column=4, sticky='ew', padx=(6, 0))
+            for variable in (overlay_visible[key], overlay_position[key]):
+                overlay_traces.append((variable, variable.trace_add('write', update_overlay_preview)))
+        def align_overlay_columns():
+            if dialog.winfo_exists():
+                width = max(choice.winfo_reqwidth() for choice in dialog.settings_overlay_size_controls.values()) + 6
+                for row in dialog.settings_overlay_rows.values():
+                    row.columnconfigure(4, minsize=width)
+        dialog.after_idle(align_overlay_columns)
+        overlay_controls.columnconfigure(0, weight=1)
+        order_buttons = ttk.Frame(overlay_controls)
+        order_buttons.grid(row=3, column=0, sticky='w', pady=(9, 6))
+        def update_order_controls(*_):
+            selected = overlay_selected.get()
+            index = overlay_order.index(selected) if selected in overlay_order else 0
+            dialog.settings_overlay_up.state(['disabled'] if index == 0 else ['!disabled'])
+            dialog.settings_overlay_down.state(['disabled'] if index == len(overlay_order) - 1 else ['!disabled'])
+            for key, row in dialog.settings_overlay_rows.items():
+                state = ['alternate'] if key == selected else ['!alternate']
+                row.state(state)
+                dialog.settings_overlay_labels[key].state(state)
+                dialog.settings_overlay_handles[key].state(state)
+        def move_overlay_to(selected, target):
+            if selected not in overlay_order or not 0 <= target < len(overlay_order):
+                return
+            index = overlay_order.index(selected)
+            if index == target:
+                return
+            overlay_order.insert(target, overlay_order.pop(index))
+            for row_number, key in enumerate(overlay_order):
+                dialog.settings_overlay_rows[key].grid_configure(row=row_number)
+            update_order_controls()
+            update_overlay_preview()
+        def move_overlay(delta):
+            selected = overlay_selected.get()
+            if delta not in (-1, 1) or selected not in overlay_order:
+                return
+            move_overlay_to(selected, overlay_order.index(selected) + delta)
+        dialog.settings_move_overlay = move_overlay
+        dialog.settings_overlay_up = ttk.Button(order_buttons, text=tr('위로'), width=9,
+                                                 command=lambda: move_overlay(-1))
+        dialog.settings_overlay_up.pack(side='left')
+        dialog.settings_overlay_down = ttk.Button(order_buttons, text=tr('아래로'), width=9,
+                                                   command=lambda: move_overlay(1))
+        dialog.settings_overlay_down.pack(side='left', padx=(5, 10))
+        overlay_traces.append((overlay_selected, overlay_selected.trace_add('write', update_order_controls)))
+        def reset_overlays():
+            overlay_order[:] = normalize_overlay_order()
+            for row_number, key in enumerate(overlay_order):
+                dialog.settings_overlay_rows[key].grid_configure(row=row_number)
+            overlay_selected.set(overlay_order[0])
+            for key, value in normalize_overlay_settings().items():
+                overlay_visible[key].set(value['visible'])
+                overlay_position[key].set(value['position'])
+                if key in overlay_size:
+                    overlay_size[key].set(value.get('size', 'large'))
+            update_overlay_preview()
+        dialog.settings_reset_overlays = reset_overlays
+        ttk.Button(order_buttons, text=tr('표시 기본값 복원'), command=reset_overlays).pack(side='left')
+        ttk.Label(overlay_controls, text=tr('손잡이나 항목 이름을 드래그하거나 위로·아래로 버튼으로 순서를 바꾸세요. 같은 위치에서는 목록의 위에서 아래 순서로 표시합니다.'),
+                  style='Muted.TLabel', wraplength=385).grid(row=4, column=0, sticky='w', pady=(3, 0))
+        ttk.Label(overlay_controls, text=tr('크기: 크게 100% · 보통 2/3 · 작게 1/2'),
+                  style='Muted.TLabel', wraplength=385).grid(row=5, column=0, sticky='w', pady=(5, 0))
+        ttk.Label(display_page, text=tr('별은 즐겨찾기 탭에서 숨깁니다. 페이지 수는 전체 이미지 수이며, 폴더는 바로 안의 이미지만 셉니다.'),
+                  wraplength=630, style='Muted.TLabel').pack(anchor='w', pady=(10, 0))
+        overlay_traces.append((theme, theme.trace_add('write', update_overlay_preview)))
+        update_order_controls()
+        update_overlay_preview()
         automatic_font = '자동 선택 (CJK 우선)'
         family_choice = tk.StringVar(dialog, value=self.settings.get('font_family') or automatic_font)
         size_choice = tk.StringVar(dialog, value=str(self.font_size))
@@ -522,7 +747,7 @@ class Preferences:
                 self.commit_preferences(theme.get(), action.get(), honey.get().strip(), custom.get().strip(), recursive.get(), {key: value.get() for key, value in display.items()},
                                         dict(family='' if family_choice.get() == automatic_font else family_choice.get(), size=size_choice.get()),
                                         language=next(code for code, label in LANGUAGES.items() if label == language.get()),
-                                        shortcuts=draft_shortcuts())
+                                        shortcuts=draft_shortcuts(), overlays=draft_overlays(), overlay_order=overlay_order)
             except ValueError as exc:
                 messagebox.showerror(tr('설정 확인'), tr(str(exc)), parent=dialog)
                 return

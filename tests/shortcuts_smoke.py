@@ -599,7 +599,12 @@ class ShortcutSmoke(unittest.TestCase):
                 app.settings['language'] = language
                 app.apply_language()
                 dialog = self.settings_dialog()
-                self.assertFalse(any(isinstance(widget, (module.tk.Canvas, module.ttk.Scrollbar))
+                sample_canvas = dialog.settings_overlay_preview.canvas
+                self.assertEqual([widget for widget in descendants(dialog)
+                                  if isinstance(widget, module.tk.Canvas)], [sample_canvas])
+                self.assertFalse(sample_canvas.cget('scrollregion'))
+                self.assertFalse(sample_canvas.winfo_children())
+                self.assertFalse(any(isinstance(widget, module.ttk.Scrollbar)
                                      for widget in descendants(dialog)))
                 self.assertEqual(len(dialog.settings_tabs.tabs()), 5)
                 self.assertEqual(dialog.action_var.get(), '파일 위치 열기')

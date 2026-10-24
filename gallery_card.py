@@ -12,6 +12,8 @@ import weakref
 
 from PIL import Image, ImageTk
 
+from thumbnail_overlays import SIZE_SCALES, normalize_overlay_order, normalize_overlay_settings
+
 
 _card_ids = count()
 
@@ -100,12 +102,17 @@ class GalleryCard:
         self.selected = False
         self.favorite = False
         self.folder = False
+        self.page_count = None
+        self.overlays = normalize_overlay_settings()
+        self.overlay_order = normalize_overlay_order()
         self.name = ''
         self.details = ''
         self._bindings = {}
         self._font = tkfont.Font(root=canvas, font=self.font)
         self._badge_font = tkfont.Font(root=canvas, family=self.font[0],
                                       size=max(17, abs(int(self.font[1])) + 4), weight='bold')
+        self._page_font = tkfont.Font(root=canvas, family=self.font[0],
+                                     size=max(10, abs(int(self.font[1]))), weight='bold')
         self.background = canvas.create_rectangle(0, 0, 0, 0, tags=(self.tag,))
         self._image_item = canvas.create_image(0, 0, anchor='center', state='hidden', tags=(self.tag,))
         self._placeholder_item = canvas.create_text(0, 0, anchor='n', justify='center',
@@ -121,6 +128,11 @@ class GalleryCard:
         # virtual gallery's canvas items or its existing event bindings.
         self.folder_item = canvas.create_polygon(0, 0, 0, 0, 0, 0,
                                                   state='hidden', tags=(self.tag,))
+        self.page_background_item = canvas.create_polygon(0, 0, 0, 0, 0, 0,
+                                                          smooth=True, splinesteps=12,
+                                                          state='hidden', tags=(self.tag,))
+        self.page_item = canvas.create_text(0, 0, anchor='nw', state='hidden',
+                                            tags=(self.tag,))
         self.thumbnail = CardThumbnail(self)
         self._image_area = (0, 0, 1, 1)
         self._apply_colors()
@@ -137,6 +149,13 @@ class GalleryCard:
         self.canvas.itemconfigure(self.badge_item, fill='#FFD21F', font=self._badge_font)
         self.canvas.itemconfigure(self.folder_item, fill='#F3C65D',
                                   outline=p['border'], width=1)
+        self.canvas.itemconfigure(self.page_background_item, fill='#242830', outline='')
+        self.canvas.itemconfigure(self.page_item, fill='#FFFFFF', font=self._page_font)
+
+    def _apply_badge_font(self):
+        base_size = max(17, abs(int(self.font[1])) + 4)
+        scale = SIZE_SCALES[self.overlays['favorite']['size']]
+        self._badge_font.configure(family=self.font[0], size=max(1, int(base_size * scale + .5)))
 
     def layout(self, x, y, width, height):
         if not self.alive:
@@ -218,8 +237,7 @@ class GalleryCard:
         self._image_area = (x + 8, y + 8, max(x + 8, x + width - 8),
                             max(y + 8, cover_bottom))
         self._render_thumbnail()
-        self._render_folder()
-        self._render_badge()
+        self._render_overlays()
 
     def _render_thumbnail(self):
         if not self.alive or self.geometry is None:
@@ -259,31 +277,124 @@ class GalleryCard:
         c.coords(self._image_item, (left + right) / 2, (top + bottom) / 2)
 
     def _render_badge(self):
-        x, y, width, height = self.geometry
-        self.canvas.coords(self.badge_item, x + width - 5, y + 3)
-        self.canvas.itemconfigure(self.badge_item, state='normal' if self.favorite else 'hidden')
-        bounds = self.canvas.bbox(self.badge_item)
-        if bounds is not None and (bounds[0] < x + 1 or bounds[1] < y + 1
-                                   or bounds[2] > x + width - 1 or bounds[3] > y + height - 1):
-            self.canvas.itemconfigure(self.badge_item, state='hidden')
-        self.canvas.tag_raise(self.badge_item)
+        self._render_overlays()
 
     def _render_folder(self):
+        self._render_overlays()
+
+    def _render_overlays(self):
+        """Lay out corner groups as a unit, in the saved display order.
+
+        Bounds are the thumbnail region, not the card's filename area. Bottom
+        groups retain the same reading order while their entire stack is
+        anchored to the bottom. All items are allocated once for recycling.
+        """
         if not self.alive or self.geometry is None:
             return
-        x, y, width, height = self.geometry
-        # Leave enough room at the other edge for the independent favorite
-        # star. Tiny synthetic cards simply omit the optional type marker.
-        visible = (self.folder and width >= 48 + self._badge_font.measure('★')
-                   and height >= 35)
-        self.canvas.itemconfigure(self.folder_item, state='normal' if visible else 'hidden')
-        if visible:
-            left, top = x + 8, y + 8
-            self.canvas.coords(self.folder_item,
-                               left, top + 3, left + 10, top + 3,
-                               left + 13, top + 7, left + 28, top + 7,
-                               left + 28, top + 22, left, top + 22)
-            self.canvas.tag_raise(self.folder_item)
+        c = self.canvas
+        for item in (self.badge_item, self.folder_item, self.page_background_item, self.page_item):
+            c.itemconfigure(item, state='hidden')
+        left, top, right, bottom = self._image_area
+        left, top, right, bottom = left + 2, top + 2, right - 2, bottom - 2
+        available_width, available_height = right - left, bottom - top
+        if available_width < 1 or available_height < 1:
+            return
+        order = self.overlay_order
+        active = {'favorite': self.favorite, 'folder': self.folder,
+                  'pages': self.page_count is not None}
+        dimensions = {}
+        for kind, item in (('favorite', self.badge_item), ('pages', self.page_item)):
+            if not active[kind] or not self.overlays[kind]['visible']:
+                continue
+            if kind == 'pages':
+                c.itemconfigure(item, text=f'{self.page_count}P')
+            c.itemconfigure(item, state='normal', anchor='nw')
+            c.coords(item, 0, 0)
+            box = c.bbox(item)
+            c.itemconfigure(item, state='hidden')
+            if box is not None:
+                pad_x, pad_y = (8, 4) if kind == 'pages' else (0, 0)
+                dimensions[kind] = (box[2] - box[0] + pad_x * 2,
+                                    box[3] - box[1] + pad_y * 2)
+        if self.folder and self.overlays['folder']['visible']:
+            # Include the one-pixel vector outline in its allocation.
+            scale = SIZE_SCALES[self.overlays['folder']['size']]
+            dimensions['folder'] = (28 * scale + 2, 22 * scale + 2)
+        dimensions = {kind: size for kind, size in dimensions.items()
+                      if size[0] <= available_width and size[1] <= available_height}
+
+        def arrange():
+            placements = {}
+            for position in ('top_left', 'top_right', 'bottom_left', 'bottom_right'):
+                group = [kind for kind in order if kind in dimensions
+                         and self.overlays[kind]['position'] == position]
+                fitted, height = [], 0
+                for kind in group:
+                    needed = dimensions[kind][1] + (4 if fitted else 0)
+                    if height + needed <= available_height:
+                        fitted.append(kind)
+                        height += needed
+                y = top if position.startswith('top') else bottom - height
+                for kind in fitted:
+                    width, item_height = dimensions[kind]
+                    x = left if position.endswith('left') else right - width
+                    placements[kind] = (x, y, x + width, y + item_height)
+                    y += item_height + 4
+            return placements
+
+        # On unusually small cards, independent corners can meet. Omit the
+        # lower-priority marker and regroup rather than drawing on one another.
+        placements = arrange()
+        for _ in range(3):
+            colliding = None
+            present = [kind for kind in order if kind in placements]
+            for index, first in enumerate(present):
+                a = placements[first]
+                for second in present[index + 1:]:
+                    b = placements[second]
+                    if a[0] < b[2] and a[2] > b[0] and a[1] < b[3] and a[3] > b[1]:
+                        colliding = second
+                        break
+                if colliding is not None:
+                    break
+            if colliding is None:
+                break
+            dimensions.pop(colliding)
+            placements = arrange()
+
+        def place_text(item, x, y):
+            c.itemconfigure(item, state='normal', anchor='nw')
+            c.coords(item, x, y)
+            box = c.bbox(item)
+            if box is not None:
+                c.move(item, x - box[0], y - box[1])
+
+        for kind in order:
+            if kind not in placements:
+                continue
+            x1, y1, x2, y2 = placements[kind]
+            if kind == 'favorite':
+                place_text(self.badge_item, x1, y1)
+                c.tag_raise(self.badge_item)
+            elif kind == 'folder':
+                x, y = x1 + 1, y1 + 1
+                scale = SIZE_SCALES[self.overlays['folder']['size']]
+                c.coords(self.folder_item,
+                         x, y, x + 10 * scale, y, x + 13 * scale, y + 4 * scale,
+                         x + 28 * scale, y + 4 * scale,
+                         x + 28 * scale, y + 22 * scale, x, y + 22 * scale)
+                c.itemconfigure(self.folder_item, state='normal')
+                c.tag_raise(self.folder_item)
+            else:
+                radius = min(10, (y2 - y1) / 2)
+                c.coords(self.page_background_item,
+                         x1 + radius, y1, x2 - radius, y1, x2, y1, x2, y1 + radius,
+                         x2, y2 - radius, x2, y2, x2 - radius, y2, x1 + radius, y2,
+                         x1, y2, x1, y2 - radius, x1, y1 + radius, x1, y1)
+                c.itemconfigure(self.page_background_item, state='normal')
+                c.tag_raise(self.page_background_item)
+                place_text(self.page_item, x1 + 8, y1 + 4)
+                c.tag_raise(self.page_item)
 
     def set_theme(self, palette, font):
         if not self.alive:
@@ -296,10 +407,13 @@ class GalleryCard:
         self.font = font
         if font_changed:
             self._font.configure(family=font[0], size=font[1])
-            self._badge_font.configure(family=font[0], size=max(17, abs(int(font[1])) + 4))
+            self._apply_badge_font()
+            self._page_font.configure(family=font[0], size=max(10, abs(int(font[1]))))
         self._apply_colors()
         if font_changed:
             self._layout_content()
+        else:
+            self._render_overlays()
 
     def set_selected(self, selected):
         selected = bool(selected)
@@ -326,6 +440,32 @@ class GalleryCard:
         if self.alive and self.folder != folder:
             self.folder = folder
             self._render_folder()
+
+    def set_overlays(self, options):
+        options = normalize_overlay_settings(options)
+        if self.alive and self.overlays != options:
+            font_changed = self.overlays['favorite']['size'] != options['favorite']['size']
+            self.overlays = options
+            if font_changed:
+                self._apply_badge_font()
+            self._render_overlays()
+
+    def set_overlay_order(self, order):
+        order = normalize_overlay_order(order)
+        if self.alive and self.overlay_order != order:
+            self.overlay_order = order
+            self._render_overlays()
+
+    def set_page_count(self, count):
+        # Unknown or failed previews have no count, rather than an invented 0P.
+        try:
+            value = int(count) if not isinstance(count, bool) else 0
+            value = value if value > 0 else None
+        except (ValueError, TypeError, OverflowError):
+            value = None
+        if self.alive and self.page_count != value:
+            self.page_count = value
+            self._render_overlays()
 
     def bind(self, sequence, callback):
         if not self.alive:
@@ -357,4 +497,5 @@ class GalleryCard:
         # tkinter.Font.__del__ from a worker's garbage collection.
         self._font = None
         self._badge_font = None
+        self._page_font = None
         self.on_photo = None

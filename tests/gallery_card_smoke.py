@@ -4,6 +4,7 @@ Use ``python tests/gallery_card_smoke.py`` on a desktop with Tk available. All
 images and file names are synthetic; no user library or saved settings is read.
 """
 import gc
+from itertools import permutations
 from pathlib import Path
 import sys
 import threading
@@ -18,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from gallery_card import GalleryCard
 from PIL import Image, ImageDraw, ImageTk
 from preferences import PALETTES
+from thumbnail_overlays import SIZE_SCALES, normalize_overlay_settings
 
 
 class GalleryCardSmoke(unittest.TestCase):
@@ -193,6 +195,282 @@ class GalleryCardSmoke(unittest.TestCase):
         self.assertNotEqual(self.canvas.itemcget(self.card.folder_item, 'state'), 'hidden')
         self.assertEqual(set(self.items()), set(items))
         self.assert_inside()
+
+    def test_same_corner_stacks_star_folder_pages_in_reading_order(self):
+        card = self.card
+        card.set_text('Image folder', '12.0 MB')
+        card.set_folder(True)
+        card.set_favorite(True)
+        card.set_page_count(30)
+        for position in ('top_left', 'top_right', 'bottom_left', 'bottom_right'):
+            with self.subTest(position=position):
+                options = normalize_overlay_settings()
+                for value in options.values():
+                    value['position'] = position
+                card.set_overlays(options)
+                self.root.update_idletasks()
+                boxes = [self.canvas.bbox(item) for item in (
+                    card.badge_item, card.folder_item, card.page_background_item)]
+                self.assertTrue(all(boxes))
+                for first, second in zip(boxes, boxes[1:]):
+                    self.assertLess(first[3], second[1], boxes)
+                left, top, right, bottom = card._image_area
+                for box in boxes:
+                    self.assertGreaterEqual(box[0], left)
+                    self.assertGreaterEqual(box[1], top)
+                    self.assertLessEqual(box[2], right)
+                    self.assertLessEqual(box[3], bottom)
+                if position.startswith('top'):
+                    self.assertLessEqual(boxes[0][1] - top, 4)
+                else:
+                    self.assertLessEqual(bottom - boxes[-1][3], 4)
+                self.assertEqual(self.canvas.itemcget(card.page_item, 'text'), '30P')
+                self.assert_inside()
+
+    def test_hidden_or_inapplicable_overlays_leave_no_stack_gap(self):
+        card = self.card
+        options = normalize_overlay_settings()
+        for value in options.values():
+            value['position'] = 'top_right'
+        card.set_overlays(options)
+        card.set_folder(True)
+        card.set_favorite(True)
+        card.set_page_count(321)
+        star_top = self.canvas.bbox(card.badge_item)[1]
+        folder_top = self.canvas.bbox(card.folder_item)[1]
+        card.set_favorite(False)  # Favorites tab deliberately passes false.
+        self.assertEqual(self.canvas.itemcget(card.badge_item, 'state'), 'hidden')
+        # Tk's polygon stroke bbox may extend a pixel beyond its allocated
+        # edge; removing the star still promotes the folder to that first row.
+        promoted_top = self.canvas.bbox(card.folder_item)[1]
+        self.assertLess(promoted_top, folder_top)
+        self.assertLessEqual(abs(promoted_top - star_top), 1)
+        card.set_folder(False)  # Archive cards have no folder marker.
+        self.assertEqual(self.canvas.itemcget(card.folder_item, 'state'), 'hidden')
+        self.assertLessEqual(abs(self.canvas.bbox(card.page_background_item)[1] - star_top), 1)
+        options['pages']['visible'] = False
+        card.set_overlays(options)
+        for item in (card.page_item, card.page_background_item):
+            self.assertEqual(self.canvas.itemcget(item, 'state'), 'hidden')
+        card.set_favorite(True)
+        options['favorite']['visible'] = False
+        card.set_overlays(options)
+        self.assertTrue(card.favorite)
+        self.assertEqual(self.canvas.itemcget(card.badge_item, 'state'), 'hidden')
+        card.set_page_count(None)
+        options['pages']['visible'] = True
+        card.set_overlays(options)
+        self.assertEqual(self.canvas.itemcget(card.page_item, 'state'), 'hidden')
+
+    def test_custom_order_applies_to_all_corners_and_keeps_bottom_groups_anchored(self):
+        card = self.card
+        card.set_folder(True)
+        card.set_favorite(True)
+        card.set_page_count(30)
+        items = {'favorite': card.badge_item, 'folder': card.folder_item,
+                 'pages': card.page_background_item}
+        for order in permutations(items):
+            for position in ('top_left', 'top_right', 'bottom_left', 'bottom_right'):
+                with self.subTest(order=order, position=position):
+                    options = normalize_overlay_settings()
+                    for value in options.values():
+                        value['position'] = position
+                    card.set_overlays(options)
+                    card.set_overlay_order(order)
+                    boxes = [self.canvas.bbox(items[kind]) for kind in order]
+                    self.assertTrue(all(boxes))
+                    for first, second in zip(boxes, boxes[1:]):
+                        self.assertLess(first[3], second[1], boxes)
+                        self.assertLessEqual(second[1] - first[3], 6, boxes)
+                    left, top, right, bottom = card._image_area
+                    for box in boxes:
+                        self.assertGreaterEqual(box[0], left)
+                        self.assertGreaterEqual(box[1], top)
+                        self.assertLessEqual(box[2], right)
+                        self.assertLessEqual(box[3], bottom)
+                    if position.startswith('top'):
+                        self.assertLessEqual(boxes[0][1] - top, 4)
+                    else:
+                        self.assertLessEqual(bottom - boxes[-1][3], 4)
+
+    def test_reordering_retains_images_items_and_hiding_middle_closes_its_gap(self):
+        card = self.card
+        card.thumbnail.show_image(Image.new('RGB', (127, 180), '#3080d0'), (220, 260))
+        card.set_folder(True)
+        card.set_favorite(True)
+        card.set_page_count(30)
+        options = normalize_overlay_settings()
+        for value in options.values():
+            value['position'] = 'top_right'
+        card.set_overlays(options)
+        items, photo = self.items(), card.thumbnail.photo
+        with patch.object(ImageTk, 'PhotoImage', wraps=ImageTk.PhotoImage) as images:
+            requested = ['pages', 'favorite', 'folder']
+            card.set_overlay_order(requested)
+            requested.reverse()  # The live card must not retain a mutable draft.
+            self.assertEqual(card.overlay_order, ['pages', 'favorite', 'folder'])
+            folder_before = self.canvas.bbox(card.folder_item)
+            card.set_favorite(False)
+            page = self.canvas.bbox(card.page_background_item)
+            folder = self.canvas.bbox(card.folder_item)
+            self.assertLess(folder[1], folder_before[1])
+            self.assertLess(page[3], folder[1])
+            self.assertLessEqual(folder[1] - page[3], 6)
+            self.assertEqual(self.canvas.itemcget(card.badge_item, 'state'), 'hidden')
+            images.assert_not_called()
+        self.assertIs(card.thumbnail.photo, photo)
+        # Reordering raises existing markers into their new paint order.
+        self.assertEqual(set(self.items()), set(items))
+        self.assertEqual(self.canvas.winfo_children(), [])
+        self.assert_inside()
+
+    def test_star_and_folder_sizes_are_independent_and_keep_existing_large_geometry(self):
+        card = self.card
+        card.set_folder(True)
+        card.set_favorite(True)
+        card.set_page_count(30)
+        card.thumbnail.show_image(Image.new('RGB', (127, 180), '#3080d0'), (220, 260))
+        photo, items = card.thumbnail.photo, set(self.items())
+        badge_font, page_font = card._badge_font, card._page_font
+        page_box = self.canvas.bbox(card.page_background_item)
+        fonts = set(tkfont.names(root=self.root))
+        options = normalize_overlay_settings()
+        base_size = max(17, abs(int(card.font[1])) + 4)
+        for star_size in ('large', 'medium', 'small'):
+            for folder_size in ('large', 'medium', 'small'):
+                with self.subTest(star_size=star_size, folder_size=folder_size):
+                    options['favorite']['size'] = star_size
+                    options['folder']['size'] = folder_size
+                    with patch.object(ImageTk, 'PhotoImage', wraps=ImageTk.PhotoImage) as images:
+                        card.set_overlays(options)
+                        images.assert_not_called()
+                    self.assertEqual(int(badge_font.cget('size')),
+                                     max(1, int(base_size * SIZE_SCALES[star_size] + .5)))
+                    coords = self.canvas.coords(card.folder_item)
+                    self.assertAlmostEqual(max(coords[::2]) - min(coords[::2]),
+                                           28 * SIZE_SCALES[folder_size])
+                    self.assertAlmostEqual(max(coords[1::2]) - min(coords[1::2]),
+                                           22 * SIZE_SCALES[folder_size])
+                    self.assertIs(card._badge_font, badge_font)
+                    self.assertIs(card._page_font, page_font)
+                    self.assertEqual(self.canvas.bbox(card.page_background_item), page_box)
+                    self.assertEqual(set(tkfont.names(root=self.root)), fonts)
+                    self.assertIs(card.thumbnail.photo, photo)
+                    self.assertEqual(set(self.items()), items)
+                    self.assert_inside()
+
+    def test_custom_sizes_keep_stacks_inside_every_corner_after_font_and_theme_changes(self):
+        card = self.card
+        card.set_folder(True)
+        card.set_favorite(True)
+        card.set_page_count(30)
+        card.set_overlay_order(['pages', 'folder', 'favorite'])
+        options = normalize_overlay_settings()
+        for size in ('large', 'medium', 'small'):
+            options['favorite']['size'] = size
+            options['folder']['size'] = size
+            for theme, palette in PALETTES.items():
+                for family, font_size in (('TkDefaultFont', 8), ('Courier', 24)):
+                    card.set_theme(palette, (family, font_size))
+                    for position in ('top_left', 'top_right', 'bottom_left', 'bottom_right'):
+                        with self.subTest(size=size, theme=theme, family=family, position=position):
+                            for value in options.values():
+                                value['position'] = position
+                            card.set_overlays(options)
+                            self.assertEqual(card._badge_font.cget('family'), family)
+                            self.assertEqual(int(card._badge_font.cget('size')),
+                                             max(1, int(max(17, font_size + 4) * SIZE_SCALES[size] + .5)))
+                            boxes = [self.canvas.bbox(item) for item in
+                                     (card.page_background_item, card.folder_item, card.badge_item)]
+                            self.assertTrue(all(boxes))
+                            for first, second in zip(boxes, boxes[1:]):
+                                self.assertLess(first[3], second[1], boxes)
+                            left, top, right, bottom = card._image_area
+                            for box in boxes:
+                                self.assertGreaterEqual(box[0], left)
+                                self.assertGreaterEqual(box[1], top)
+                                self.assertLessEqual(box[2], right)
+                                self.assertLessEqual(box[3], bottom)
+                            self.assert_inside()
+
+    def test_page_badge_is_one_group_count_and_updates_without_new_images(self):
+        card = self.card
+        card.thumbnail.show_image(Image.new('RGB', (381, 180), '#3080d0'), (660, 260))
+        photo = card.thumbnail.photo
+        items = self.items()
+        for previews in (1, 2, 3):
+            card.layout(20, 30, 240 * previews, 340)
+            stable_photo = card.thumbnail.photo
+            card.set_page_count(30)
+            self.assertEqual(self.canvas.itemcget(card.page_item, 'text'), '30P')
+            self.assertEqual(sum(self.canvas.itemcget(item, 'text') == '30P'
+                                 for item in self.items() if self.canvas.type(item) == 'text'), 1)
+            options = normalize_overlay_settings()
+            options['pages']['position'] = 'bottom_left'
+            with patch.object(ImageTk, 'PhotoImage', wraps=ImageTk.PhotoImage) as image:
+                card.set_overlays(options)
+                card.set_page_count(41)
+                card.set_favorite(True)
+                card.set_folder(True)
+                image.assert_not_called()
+            self.assertIs(card.thumbnail.photo, stable_photo)
+            self.assertEqual(set(self.items()), set(items))
+            self.assert_inside()
+        self.assertIsNotNone(photo)
+        self.assertEqual(self.canvas.winfo_children(), [])
+
+    def test_overlays_fit_the_thumbnail_after_large_fonts_resize_and_theme(self):
+        card = self.card
+        card.set_text('Synthetic image folder with a name', '12.0 MB · 2026-10-24')
+        card.set_folder(True)
+        card.set_favorite(True)
+        card.set_page_count(123456)
+        options = normalize_overlay_settings()
+        for value in options.values():
+            value['position'] = 'bottom_right'
+        card.set_overlays(options)
+        for font_size in (8, 24):
+            for name, palette in PALETTES.items():
+                for width, height in ((240, 340), (120, 180), (45, 25)):
+                    with self.subTest(font_size=font_size, theme=name, size=(width, height)):
+                        card.set_theme(palette, ('TkDefaultFont', font_size))
+                        card.layout(20, 30, width, height)
+                        self.root.update_idletasks()
+                        left, top, right, bottom = card._image_area
+                        boxes = []
+                        for item in (card.badge_item, card.folder_item, card.page_background_item):
+                            box = self.canvas.bbox(item)
+                            if box is not None:
+                                self.assertGreaterEqual(box[0], left)
+                                self.assertGreaterEqual(box[1], top)
+                                self.assertLessEqual(box[2], right)
+                                self.assertLessEqual(box[3], bottom)
+                                boxes.append(box)
+                        for first, second in zip(boxes, boxes[1:]):
+                            self.assertLess(first[3], second[1], boxes)
+                        self.assert_inside()
+
+    def test_page_badge_click_uses_card_selection_and_settings_are_detached(self):
+        card = self.card
+        options = normalize_overlay_settings()
+        card.set_overlays(options)
+        options['pages']['visible'] = False
+        card.set_page_count(30)
+        selected = []
+        card.bind('<Button-1>', lambda event: selected.append(self.path))
+        self.root.update()
+        box = self.canvas.bbox(card.page_background_item)
+        self.assertIsNotNone(box)
+        x, y = (box[0] + box[2]) // 2, (box[1] + box[3]) // 2
+        self.canvas.event_generate('<Motion>', x=x, y=y)
+        self.canvas.event_generate('<ButtonPress-1>', x=x, y=y)
+        self.canvas.event_generate('<ButtonRelease-1>', x=x, y=y)
+        self.root.update()
+        self.assertEqual(selected, [self.path])
+        card.set_page_count(-1)
+        self.assertEqual(self.canvas.itemcget(card.page_item, 'state'), 'hidden')
+        card.set_page_count('unknown')
+        self.assertIsNone(card.page_count)
 
     def test_images_preserve_aspect_and_cannot_draw_across_rows(self):
         self.card.set_text('Archive-001.cbz', '12.0 MB · 2026-10-19')

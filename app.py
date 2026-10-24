@@ -40,6 +40,7 @@ from thumbnail_editor import ThumbnailEditor
 from shortcuts import migrate as migrate_shortcuts, validate as validate_shortcuts, legacy_actions, command_for_key, event_key
 from smooth_scroll import SmoothScroller, wheel_pixels
 from gallery_card import GalleryCard
+from thumbnail_overlays import normalize_overlay_settings, normalize_overlay_order
 
 DATA = (Path(os.environ['LOCALAPPDATA']) / 'ArchiveShelf' if os.environ.get('LOCALAPPDATA') else
         Path.home() / 'Library/Application Support/File Tripitaka' if sys.platform == 'darwin' else
@@ -77,6 +78,8 @@ class App(Preferences, tk.Tk):
             self.settings = json.loads(CONFIG.read_text('utf-8'))
         except (OSError, ValueError):
             self.settings = {}
+        self.settings['thumbnail_overlays'] = normalize_overlay_settings(self.settings.get('thumbnail_overlays'))
+        self.settings['thumbnail_overlay_order'] = normalize_overlay_order(self.settings.get('thumbnail_overlay_order'))
         set_language(self.settings.get('language', 'ko'))
         self.font_size = max(8, min(24, int(self.settings.get('font_size', 10))))
         self.ui_font = configure_fonts(self, self.settings.get('font_family', ''), self.font_size)
@@ -1029,6 +1032,9 @@ class App(Preferences, tk.Tk):
     def display_thumbnail(self, label, image, error=None):
         """Replace just the pixels/text inside an existing gallery card."""
         path = getattr(label, 'archive_path', None)
+        card = label.card
+        if card is not None:
+            card.set_page_count(None if error else image.info.get('page_count'))
         if error:
             if path is not None:
                 self.preview_errors.add(str(path))
@@ -1197,6 +1203,8 @@ class App(Preferences, tk.Tk):
         frame.set_favorite(show)
 
     def update_card_labels(self, frame, path):
+        frame.set_overlays(self.settings.get('thumbnail_overlays'))
+        frame.set_overlay_order(self.settings.get('thumbnail_overlay_order'))
         folder = self.item_kinds.get(path) == 'folder'
         settings = dict(self.settings, show_extension=True) if folder else self.settings
         name, details = card_text(path, self.metadata.get(path, (0, 0)), settings)

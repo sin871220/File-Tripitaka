@@ -299,8 +299,14 @@ class WheelRoutingSmoke(unittest.TestCase):
         dialog = app.settings_window
         widgets = list(descendants(dialog))
         self.assertEqual(len(dialog.settings_tabs.tabs()), 5)
-        self.assertFalse(any(isinstance(widget, module.tk.Canvas) for widget in widgets),
-                         'Settings pages must not acquire scrolling canvas wrappers')
+        canvases = [widget for widget in widgets if isinstance(widget, module.tk.Canvas)]
+        self.assertEqual(canvases, [dialog.settings_overlay_preview.canvas],
+                         'Only the static overlay sample may use a settings canvas')
+        for canvas in canvases:
+            self.assertFalse(canvas.cget('scrollregion'))
+            self.assertFalse(canvas.cget('xscrollcommand'))
+            self.assertFalse(canvas.cget('yscrollcommand'))
+            self.assertFalse(canvas.winfo_children(), 'The sample must not wrap settings controls')
         gallery = app.canvas.canvasy(0)
         with patch.object(app.smooth_scroll, 'scroll_by', wraps=app.smooth_scroll.scroll_by) as motion:
             for tab in dialog.settings_tabs.tabs():

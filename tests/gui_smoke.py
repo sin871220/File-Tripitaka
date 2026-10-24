@@ -230,7 +230,10 @@ with tempfile.TemporaryDirectory() as tmp:
     assert app.canvas.itemcget(badge, 'text') == '★'
     assert app.canvas.itemcget(badge, 'state') == 'normal'
     assert app.canvas.itemcget(badge, 'fill') == '#FFD21F'
-    assert app.canvas.itemcget(badge, 'anchor') == 'ne'
+    left, top, right, bottom = card[1]._image_area
+    badge_box = app.canvas.bbox(badge)
+    assert abs(badge_box[2] - (right - 2)) <= 1
+    assert abs(badge_box[1] - (top + 2)) <= 1
     assert not card[1].name.startswith('★ ')
     assert not app.canvas.itemcget(card[1].title_item, 'text').startswith('★ ')
     app.only_favorites.set(True)
@@ -394,11 +397,15 @@ with tempfile.TemporaryDirectory() as tmp:
     style = module.ttk.Style(app)
     assert style.lookup('TSpinbox', 'foreground') == app.palette['fg']
     assert style.lookup('TSpinbox', 'fieldbackground') == app.palette['field']
-    assert not any(w.winfo_class() in ('Canvas', 'TScrollbar', 'Scrollbar') for w in descendants(dialog))
+    sample_canvas = dialog.settings_overlay_preview.canvas
+    assert [w for w in descendants(dialog) if w.winfo_class() == 'Canvas'] == [sample_canvas]
+    assert not sample_canvas.cget('scrollregion') and not sample_canvas.winfo_children()
+    assert not any(w.winfo_class() in ('TScrollbar', 'Scrollbar') for w in descendants(dialog))
     for page in settings_tabs.tabs():
         settings_tabs.select(page)
         app.update_idletasks()
-        assert not any(w.winfo_class() in ('Canvas', 'TScrollbar') for w in descendants(dialog))
+        assert not any(w.winfo_class() in ('Canvas', 'TScrollbar', 'Scrollbar')
+                       and w is not sample_canvas for w in descendants(dialog))
     settings_tabs.select(0)
     app.update_idletasks()
 
